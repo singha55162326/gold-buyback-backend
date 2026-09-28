@@ -27,6 +27,11 @@ let BusinessDayService = BusinessDayService_1 = class BusinessDayService {
     }
     /** Midnight of the given instant, in the server's local timezone. */
     static toDateOnly(at = new Date()) {
+        // Local time on purpose: a business day is the shop's day, and the shop
+        // is in Vientiane. That makes the server's TZ a financial setting — on a
+        // UTC host the day would roll at 07:00 Lao time, mid-morning, splitting a
+        // single trading day across two BusinessDay rows. `assertShopTimezone`
+        // below is what stops that shipping unnoticed.
         return new Date(at.getFullYear(), at.getMonth(), at.getDate());
     }
     /**

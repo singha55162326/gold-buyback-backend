@@ -5,7 +5,10 @@ const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const app_module_1 = require("./app.module");
 const swagger_1 = require("./swagger");
+const shop_timezone_1 = require("./common/shop-timezone");
 async function bootstrap() {
+    // Before anything can record a transaction, make sure the host can date it.
+    (0, shop_timezone_1.assertShopTimezone)();
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.setGlobalPrefix('api');
     app.enableCors({

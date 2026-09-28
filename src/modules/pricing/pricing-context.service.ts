@@ -57,9 +57,11 @@ export class PricingContextService {
       snapshot.lines.map((line) => [line.tierCode, dec(line.buybackPrice.toFixed())]),
     );
 
-    // The lookup is keyed by EXCHANGE weight (1.875), not display weight
-    // (1.87) — matching on the printed value would silently miss and price
-    // the gold at zero.
+    // Keyed by DISPLAY weight (1.87), which is what the shop's own workbook
+    // matches on: both the buyback price (ຄຳຮ້ານKPV!G6) and the ຄ່າອ່ອນ
+    // standard (ປ່ຽນເປັນເງິນ!F9) look up Produets column B, the printed
+    // weight — not column C, the 1.875 figure. Column C keys the ຄ່າປ່ຽນ
+    // table instead. Using 1.875 here priced a genuine 1.87 g piece at zero.
     const table = makePriceTable(
       (
         [
@@ -75,7 +77,7 @@ export class PricingContextService {
         .filter((tier) => buybackByTier.has(tier))
         .map((tier) => ({
           tierCode: tier,
-          weightG: TIER_META[tier].exchangeWeightG,
+          weightG: TIER_META[tier].displayWeightG,
           buybackPrice: buybackByTier.get(tier)!,
         })),
     );
@@ -92,7 +94,7 @@ export class PricingContextService {
         .filter((tier) => buybackByTier.has(tier))
         .map((tier) => ({
           tierCode: tier,
-          weightG: TIER_META[tier].exchangeWeightG,
+          weightG: TIER_META[tier].displayWeightG,
           buybackPrice: buybackByTier.get(tier)!,
         })),
     );

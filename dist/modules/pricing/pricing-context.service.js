@@ -36,9 +36,11 @@ let PricingContextService = class PricingContextService {
         if (!rates)
             throw new common_1.NotFoundException('ຍັງບໍ່ມີການຕັ້ງອັດຕາແລກປ່ຽນ');
         const buybackByTier = new Map(snapshot.lines.map((line) => [line.tierCode, (0, domain_1.dec)(line.buybackPrice.toFixed())]));
-        // The lookup is keyed by EXCHANGE weight (1.875), not display weight
-        // (1.87) — matching on the printed value would silently miss and price
-        // the gold at zero.
+        // Keyed by DISPLAY weight (1.87), which is what the shop's own workbook
+        // matches on: both the buyback price (ຄຳຮ້ານKPV!G6) and the ຄ່າອ່ອນ
+        // standard (ປ່ຽນເປັນເງິນ!F9) look up Produets column B, the printed
+        // weight — not column C, the 1.875 figure. Column C keys the ຄ່າປ່ຽນ
+        // table instead. Using 1.875 here priced a genuine 1.87 g piece at zero.
         const table = (0, domain_1.makePriceTable)([
             domain_1.TierCode.JW_BAHT_1,
             domain_1.TierCode.JW_SALEUNG_2,
@@ -51,7 +53,7 @@ let PricingContextService = class PricingContextService {
             .filter((tier) => buybackByTier.has(tier))
             .map((tier) => ({
             tierCode: tier,
-            weightG: domain_1.TIER_META[tier].exchangeWeightG,
+            weightG: domain_1.TIER_META[tier].displayWeightG,
             buybackPrice: buybackByTier.get(tier),
         })));
         const barTable = (0, domain_1.makePriceTable)([
@@ -63,7 +65,7 @@ let PricingContextService = class PricingContextService {
             .filter((tier) => buybackByTier.has(tier))
             .map((tier) => ({
             tierCode: tier,
-            weightG: domain_1.TIER_META[tier].exchangeWeightG,
+            weightG: domain_1.TIER_META[tier].displayWeightG,
             buybackPrice: buybackByTier.get(tier),
         })));
         const source = {
