@@ -1,0 +1,43 @@
+{
+  "name": "@kpv/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NestJS API for the KPV gold store system",
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@kpv/db": "*",
+    "@kpv/domain": "*",
+    "@nestjs/common": "^11.0.7",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.7",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/passport": "^11.0.5",
+    "@nestjs/platform-express": "^11.0.7",
+    "@nestjs/platform-socket.io": "^11.0.7",
+    "@nestjs/swagger": "^11.4.7",
+    "@nestjs/websockets": "^11.0.7",
+    "@node-rs/argon2": "^2.0.2",
+    "@prisma/client": "^6.19.3",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "decimal.js": "^10.5.0",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.2",
+    "@nestjs/schematics": "^11.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.1",
+    "@types/passport-jwt": "^4.0.1",
+    "typescript": "^5.7.3"
+  }
+}
