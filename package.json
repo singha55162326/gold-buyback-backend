@@ -7,10 +7,16 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "reset": "prisma migrate reset --force",
+    "studio": "prisma studio",
+    "seed": "tsx prisma/seed.ts",
+    "verify-pricing": "tsx prisma/verify-pricing.ts"
   },
   "dependencies": {
-    "@kpv/db": "*",
     "@kpv/domain": "*",
     "@nestjs/common": "^11.0.7",
     "@nestjs/config": "^4.0.0",
@@ -38,6 +44,9 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.1",
     "@types/passport-jwt": "^4.0.1",
+    "dotenv": "^16.4.7",
+    "prisma": "^6.19.3",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }
 }

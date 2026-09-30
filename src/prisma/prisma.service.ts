@@ -9,7 +9,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    * PrismaClient's own .env discovery.
    *
    * That discovery resolves relative to where the client was GENERATED
-   * (packages/db), not where it runs — so the API could silently connect to a
+   * (backend/prisma), not where it runs — so the API could silently connect to a
    * different database from the one its own .env named. Reading it through
    * ConfigService makes the source unambiguous and honours the root .env.
    */

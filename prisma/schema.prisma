@@ -1,0 +1,1743 @@
+// ============================================================================
+//  ລະບົບບໍລິຫານຈັດການຮ້ານຄຳ KPV — Prisma schema
+//  Gold Store & Financial Management System (TOR v1.1)
+//
+//  Conventions used throughout:
+//   * Money and weight are ALWAYS Decimal(18,4) — TOR §10.
+//   * Config tables are APPEND-ONLY and versioned by `effectiveAt`; the
+//     "current" value is the newest row. This gives the History views in
+//     §3.1/§3.3/§3.5 for free and keeps past transactions reproducible.
+//   * Transactional tables are SOFT-deleted (`deletedAt`) and surface in the
+//     Deleted List module.
+//   * Balances are never stored as mutable numbers. Ledger rows carry their
+//     own running weight/cost columns (§7.1, §7.2, §8.2) and a daily snapshot
+//     row anchors the opening balance.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+//  Enums
+// ---------------------------------------------------------------------------
+
+/// TOR §2 — ການກຳນົດສິດຜູ້ໃຊ້ງານ
+enum UserRole {
+  ADMIN
+  MANAGER
+  PAYMENT              // ພະນັກງານການເງິນໜ້າຮ້ານ
+  VALUER               // ຜູ້ປະເມີນລາຄາ
+  FINANCIAL_CONTROLLER
+  WAREHOUSE            // ຜູ້ຈັດການສາງ
+}
+
+enum Currency {
+  LAK
+  THB
+  USD
+}
+
+/// ໝວດຄຳ — the two pricing families of TOR §3.1
+enum GoldCategoryCode {
+  JEWELRY // ຮູບປະພັນ
+  BAR     // ຄຳແທ່ງ
+}
+
+/// How a tier's buyback price is derived from its sell price (TOR §3.2)
+enum DeductionKind {
+  PERCENT // ຫັກອອກ (%)
+  AMOUNT  // ລາຄາລົບອອກ (ກີບ)
+}
+
+/// The shared approval lifecycle used by every workflow in the TOR.
+enum ApprovalStatus {
+  DRAFT
+  PENDING   // ລໍຖ້າອະນຸມັດ
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum ShiftStatus {
+  OPEN             // ເປີດກະ
+  PENDING_APPROVAL // ປິດກະແລ້ວ ລໍຖ້າ Financial Controller
+  CLOSED
+  REJECTED
+}
+
+/// ເບີກເງິນ (+) / ມອບເງິນ (-) — TOR §4.1
+enum CashRequestDirection {
+  WITHDRAW // ເບີກເງິນ (+)
+  HANDOVER // ມອບເງິນ (-)
+}
+
+enum CashTxnType {
+  IN
+  OUT
+  OTHER_INCOME
+  OTHER_EXPENSE
+}
+
+enum BankTxnType {
+  DEPOSIT
+  WITHDRAW
+  INCOME
+  EXPENSE
+}
+
+enum PaymentMethod {
+  CASH
+  BANK
+}
+
+/// ແຫຼ່ງທີ່ມາຂອງຄຳຊື້ຄືນ — TOR §5.1
+enum BuybackSource {
+  KPV        // ຄຳຮ້ານ KPV
+  OTHER_SHOP // ຄຳຮ້ານອື່ນ (ຄຳຕົ້ມ)
+}
+
+/// ທຸລະກຳ — TOR §5.2
+enum ExchangeTxnType {
+  EXCHANGE_TO_CASH // ປ່ຽນເປັນເງິນ
+  FREE_EXCHANGE    // ປ່ຽນຟຣີ
+}
+
+/// ຮູບປະພັນ ດີ / ເສຍ — drives which ຄ່າປ່ຽນ column applies
+enum ShapeCondition {
+  GOOD    // ຮູບປະພັນດີ
+  DAMAGED // ເສຍຮູບ
+}
+
+/// TOR §7 — Status Workflow Order
+enum OrderStatus {
+  ORDER_PLACED         // Order ສຳເລັດ
+  SENT_TO_SMITH        // ສັ່ງຊ່າງ ສຳເລັດ
+  RECEIVED_FROM_SMITH  // ຮັບເຄື່ອງຈາກຊ່າງ ສຳເລັດ
+  AWAITING_PICKUP      // ລໍຖ້າລູກຄ້າຮັບເຄື່ອງ
+  COMPLETED
+  CANCELLED
+}
+
+/// Which warehouse a movement belongs to.
+enum StockScope {
+  NEW // ສາງຄຳໃໝ່
+  OLD // ສາງຄຳເກົ່າ
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  TRANSFER // NEW <-> OLD
+}
+
+/// Whether a partner/location can receive gold, send gold, or both.
+enum PartnerDirection {
+  IN
+  OUT
+  BOTH
+}
+
+/// ແປງສະພາບ — TOR §7.2
+enum TransformType {
+  DYE   // ຍ້ອມ
+  ETCH  // ກັດ
+  MELT  // ຫຼອມ
+}
+
+/// TOR §7.3 — ຕິດຕາມ Stock Out ໄປ FACTORY
+enum FactoryTrackStatus {
+  AWAITING_ASSESSMENT // ລໍຖ້າ FACTORY ປະເມີນ
+  COMPLETED
+}
+
+/// Which side of the sub-ledger a row belongs to (TOR §8, §9).
+enum ApArSide {
+  AP // ໜີ້ຕ້ອງສົ່ງ
+  AR // ໜີ້ຕ້ອງຮັບ
+}
+
+/// What produced an AP/AR row — used for reporting and for reversing a posting.
+enum ApArRefType {
+  ORDER_DEPOSIT     // ເງິນມັດຈໍາ Order ຮັບລ່ວງໜ້າ
+  ORDER_SETTLEMENT  // Order Completed
+  LABOR_PAYABLE     // ຄ່າແຮງຊ່າງຄ້າງຈ່າຍ
+  LABOR_PAYMENT     // ຈ່າຍຄ່າແຮງຊ່າງ
+  CREDIT_ISSUED     // ຍອດສິນເຊື່ອໃໝ່
+  CREDIT_RECEIPT    // ຮັບຄ່າງວດສິນເຊື່ອ
+  STOCK_IN          // ຄຳຮັບເຂົ້າ
+  STOCK_OUT         // ຄຳສົ່ງອອກ
+  FACTORY_ASSESSED  // FACTORY ປະເມີນນ້ຳໜັກແລ້ວ
+  OPENING           // ຍອດຕັ້ງຕົ້ນ / ຍົກຍອດ
+  ADJUSTMENT
+}
+
+/// TOR §7 — ປະເພດສິນຄ້າ ຂອງ Order.
+enum OrderProductType {
+  IT
+  ITP
+}
+
+/// ໝວດ ລາຍຮັບ / ລາຍຈ່າຍ (TOR §3.7).
+enum IncomeExpenseKind {
+  INCOME  // ລາຍຮັບ
+  EXPENSE // ລາຍຈ່າຍ
+}
+
+/// ຝາກສິນຄ້າ (TOR §3.7).
+enum ConsignmentStatus {
+  HELD     // ຝາກໄວ້
+  RETURNED // ສົ່ງມອບຄືນແລ້ວ
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  COMPLETE
+  LOGIN
+  LOGOUT
+}
+
+/// Delivery state of a notification's WhatsApp copy.
+///
+/// Notifications are written inside the business transaction but DISPATCHED
+/// afterwards by a background worker. A gateway outage can therefore never
+/// roll back a buyback or a stock movement.
+enum WhatsAppStatus {
+  /// No WhatsApp copy is wanted (recipient opted out, or channel disabled).
+  SKIPPED
+  /// Queued for the dispatcher.
+  PENDING
+  SENT
+  /// Gave up after the retry limit; `whatsappError` says why.
+  FAILED
+}
+
+enum NotificationKind {
+  BUYBACK_CREATED
+  EXCHANGE_CREATED
+  CREDIT_CREATED
+  APPROVAL_RESULT
+  CASH_REQUEST
+  SHIFT_CLOSE
+  GOLD_HANDOVER
+  STOCK_OUT_APPROVAL
+  LABOR_FEE_PAYMENT
+  FACTORY_ASSESSMENT
+}
+
+// ---------------------------------------------------------------------------
+//  Identity, audit & notifications
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  fullName     String
+  role         UserRole
+  phone        String?
+  /// WhatsApp number for notifications. Local (8-digit) or full form; the
+  /// dispatcher normalises it. Falls back to `phone` when empty.
+  whatsappNumber String?
+  /// Opt-in. Off by default — staff are not messaged without being added.
+  notifyWhatsApp Boolean @default(false)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  notifications Notification[] @relation("NotificationRecipient")
+  shifts        Shift[]
+
+  @@index([role, isActive])
+  @@map("users")
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+/// TOR §10 — Audit Logs ທຸກການເພີ່ມ, ແກ້ໄຂ, ເບີກ, ມອບ, Approve, Reject.
+model AuditLog {
+  id         String      @id @default(cuid())
+  actorId    String?
+  action     AuditAction
+  entity     String
+  entityId   String?
+  before     Json?
+  after      Json?
+  summary    String?
+  ipAddress  String?
+  createdAt  DateTime    @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}
+
+/// Real-time alerts pushed over Socket.IO (TOR §10).
+/// Either `recipientUserId` (a specific person) or `recipientRole` (everyone
+/// holding that role) is set.
+model Notification {
+  id              String           @id @default(cuid())
+  kind            NotificationKind
+  recipientUserId String?
+  recipientRole   UserRole?
+  title           String
+  body            String?
+  refType         String?
+  refId           String?
+  readAt          DateTime?
+  createdAt       DateTime         @default(now())
+
+  /// --- WhatsApp outbox (TOR §10 notification system) ---
+  whatsappStatus   WhatsAppStatus @default(SKIPPED)
+  whatsappSentAt   DateTime?
+  whatsappAttempts Int            @default(0)
+  whatsappError    String?
+  /// Resolved E.164-style recipient, e.g. 8562012345678. Snapshotted at queue
+  /// time so a later profile edit cannot redirect an already-queued message.
+  whatsappTo       String?
+
+  recipient User? @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, readAt])
+  @@index([recipientRole, readAt])
+  @@index([whatsappStatus, createdAt])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+//  §3.1 / §3.2 — Products, pricing snapshots and buyback deductions
+// ---------------------------------------------------------------------------
+
+/// The 11 fixed weight tiers of the TOR product table.
+model WeightTier {
+  code      String           @id
+  category  GoldCategoryCode
+  labelLo   String
+  /// ນ້ຳໜັກ (g) as printed (5 ຫຸນ = 1.87).
+  displayWeightG  Decimal    @db.Decimal(18, 4)
+  /// ນ້ຳໜັກປ່ຽນເປັນເງິນ — the exact value used in exchange math (1.875).
+  exchangeWeightG Decimal    @db.Decimal(18, 4)
+  sortOrder Int
+
+  priceLines       PriceSnapshotLine[]
+  deductionRules   BuybackDeductionRule[]
+  jewelryFees      JewelryConversionFee[]
+
+  @@index([category, sortOrder])
+  @@map("weight_tiers")
+}
+
+/// One press of "Set Pricing" (TOR §3.1). Append-only: History Products is
+/// simply the newest 30 rows. Transactions reference the snapshot they were
+/// priced from, so re-pricing today can never rewrite yesterday's receipt.
+model PriceSnapshot {
+  id          String   @id @default(cuid())
+  /// ລາຄາຂາຍ 1 ບາດ — the single input every other price derives from.
+  price1Baht  Decimal  @db.Decimal(18, 4)
+  effectiveAt DateTime @default(now())
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  lines     PriceSnapshotLine[]
+  buybacks  Buyback[]
+  exchanges GoldExchange[]
+
+  @@index([effectiveAt])
+  @@map("price_snapshots")
+}
+
+/// The materialised 11-row price board for a snapshot. Sell and buyback are
+/// both computed by @kpv/domain and stored, so the numbers shown to the user
+/// and the numbers persisted can never drift apart.
+model PriceSnapshotLine {
+  id           String  @id @default(cuid())
+  snapshotId   String
+  tierCode     String
+  sellPrice    Decimal @db.Decimal(18, 4)
+  buybackPrice Decimal @db.Decimal(18, 4)
+  /// A/B/C/D intermediates kept for auditability of the rounding ladder.
+  steps        Json?
+
+  snapshot PriceSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  tier     WeightTier    @relation(fields: [tierCode], references: [code])
+
+  @@unique([snapshotId, tierCode])
+  @@map("price_snapshot_lines")
+}
+
+/// TOR §3.2 — ລາຄາລົບອອກ & ຫັກອອກ (%). Append-only per tier.
+model BuybackDeductionRule {
+  id          String        @id @default(cuid())
+  tierCode    String
+  kind        DeductionKind
+  /// PERCENT: percent units (2.60 = 2.60%). AMOUNT: flat LAK (209,000).
+  value       Decimal       @db.Decimal(18, 4)
+  effectiveAt DateTime      @default(now())
+  createdById String
+  createdAt   DateTime      @default(now())
+
+  tier WeightTier @relation(fields: [tierCode], references: [code])
+
+  @@index([tierCode, effectiveAt])
+  @@map("buyback_deduction_rules")
+}
+
+// ---------------------------------------------------------------------------
+//  §3.3 — Price Rate (ອັດຕາແລກປ່ຽນ)
+// ---------------------------------------------------------------------------
+
+/// One press of "Update Price Rate". Sell rates are used when the shop takes
+/// foreign currency in; buyback rates when it pays foreign currency out.
+model ExchangeRateSnapshot {
+  id             String   @id @default(cuid())
+  thbSellRate    Decimal  @db.Decimal(18, 4) // THB/LAK
+  usdSellRate    Decimal  @db.Decimal(18, 4) // USD/LAK
+  thbBuybackRate Decimal  @db.Decimal(18, 4) // LAK/THB
+  usdBuybackRate Decimal  @db.Decimal(18, 4) // LAK/USD
+  effectiveAt    DateTime @default(now())
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  @@index([effectiveAt])
+  @@map("exchange_rate_snapshots")
+}
+
+// ---------------------------------------------------------------------------
+//  §3.4 / §3.5 — ຄ່າປ່ຽນ ແລະ ຄ່າອ່ອນ
+// ---------------------------------------------------------------------------
+
+/// ຄ່າປ່ຽນຮູບປະພັນ — one row per tier, append-only.
+model JewelryConversionFee {
+  id             String   @id @default(cuid())
+  tierCode       String
+  weightG        Decimal  @db.Decimal(18, 4)
+  /// ຄ່າປ່ຽນຮູບປະພັນດີ
+  feeGoodShape   Decimal  @db.Decimal(18, 4)
+  /// ຄ່າປ່ຽນເສຍຮູບ
+  feeDamagedShape Decimal @db.Decimal(18, 4)
+  effectiveAt    DateTime @default(now())
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  tier WeightTier @relation(fields: [tierCode], references: [code])
+
+  @@index([tierCode, effectiveAt])
+  @@map("jewelry_conversion_fees")
+}
+
+/// ຄ່າປ່ຽນຄຳແທ່ງ — keyed by weight (15 / 7.5 / 3.75 g), append-only.
+model BarConversionFee {
+  id            String   @id @default(cuid())
+  weightG       Decimal  @db.Decimal(18, 4)
+  /// ຄຳແທ່ງ -> ຮູບປະພັນ
+  barToJewelry  Decimal  @db.Decimal(18, 4)
+  /// ຄຳແທ່ງ -> ຄຳແທ່ງ
+  barToBar      Decimal  @db.Decimal(18, 4)
+  effectiveAt   DateTime @default(now())
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  @@index([weightG, effectiveAt])
+  @@map("bar_conversion_fees")
+}
+
+/// ຄ່າອ່ອນ (TOR §3.5) — the per-unit deduction for under-weight gold.
+model SoftGoldFeeSnapshot {
+  id          String   @id @default(cuid())
+  value       Decimal  @db.Decimal(18, 4)
+  effectiveAt DateTime @default(now())
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([effectiveAt])
+  @@map("soft_gold_fee_snapshots")
+}
+
+// ---------------------------------------------------------------------------
+//  §3.6 / §3.7 / §3.8 — ປະເພດຄຳ, ລາຍການຄຳ, SKU, ຕູ້ເຄື່ອງ, ແຫຼ່ງ, ທະນາຄານ
+// ---------------------------------------------------------------------------
+
+/// ປະເພດຄຳ — ຄຳດີ, ຄຳຫຍຸບ, ຄຳແທ່ງ, ຄຳຕົ້ມ, ປ່ຽນເປັນເງິນ, ປ່ຽນຟຣີ.
+/// `isStockType` marks the four types that Stock (OLD) is bucketed by.
+model GoldType {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  nameLo      String
+  isStockType Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  buybacks         Buyback[]
+  exchangeOldLines ExchangeOldLine[]
+  oldBalances      StockOldTypeBalance[]
+  oldLedger        StockOldLedger[]
+  handovers        GoldHandover[]
+  movementLines    StockMovementLine[]
+
+  @@map("gold_types")
+}
+
+/// ລາຍການຄຳ — ສາຍແຂນ, ສາຍຄໍ, ກີ້, ແຫວນ, ຕ່າງຫູ, ສາຍແອວ, ຄຳແທ່ງ.
+model GoldItem {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  nameLo    String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  skus     GoldSku[]
+  buybacks Buyback[]
+  exchangeOldLines ExchangeOldLine[]
+  credits  GoldCredit[]
+  orders   Order[]
+
+  @@map("gold_items")
+}
+
+/// TOR §3.7 — ລະບົບຈັດການ SKU ນ້ຳໜັກຂອງຄຳ.
+/// `bahtWeight` and `fullSkuName` are derived on write by the API from
+/// weightG / 15 — never supplied by the client.
+model GoldSku {
+  id          String   @id @default(cuid())
+  goldItemId  String
+  nameLo      String
+  weightG     Decimal  @db.Decimal(18, 4)
+  bahtWeight  Decimal  @db.Decimal(18, 4)
+  /// e.g. "ສາຍແຂນ 1 ບາດ"
+  fullSkuName String
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  goldItem         GoldItem            @relation(fields: [goldItemId], references: [id])
+  movementLines    StockMovementLine[]
+  newBalances      StockNewSkuBalance[]
+  exchangeNewLines ExchangeNewLine[]
+
+  @@unique([goldItemId, weightG])
+  @@index([fullSkuName])
+  @@map("gold_skus")
+}
+
+/// ຕູ້ເຄື່ອງ — display cabinets that finished pieces are assigned to.
+model Cabinet {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  nameLo    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  exchangeNewLines ExchangeNewLine[]
+  credits          GoldCredit[]
+  movements        StockMovement[]
+
+  @@map("cabinets")
+}
+
+/// ແຫຼ່ງຮັບເຂົ້າ / ແຫຼ່ງສົ່ງອອກ — EASY, FACTORY, ຊ່າງນອກ, ອື່ນໆ,
+/// CABINET, WHOLESALES, WITHDRAW. Also the counterparty for AP/AR (GOLD).
+model PartnerSource {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  nameLo      String
+  direction   PartnerDirection
+  /// True when gold movements with this partner post to AP/AR (GOLD).
+  tracksGoldApAr Boolean       @default(false)
+  sortOrder   Int              @default(0)
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
+
+  movements       StockMovement[]
+  goldApArLedger  GoldApArLedger[]
+  goldApArOpening GoldApArOpening[]
+  postingRules    GoldApArPostingRule[] @relation("RulePartner")
+  counterpartyFor GoldApArPostingRule[] @relation("RuleCounterparty")
+  factoryTracks   FactoryOutTracking[]
+  orders          Order[]
+  cashApArLedger  CashApArLedger[]
+
+  @@map("partner_sources")
+}
+
+/// BCEL, LDB, Other Bank (TOR §3.8).
+model BankAccount {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  nameLo    String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions      BankTransaction[]
+  netBalances       BankNetBalance[]
+  buybackPayments   BuybackPayment[]
+  exchangePayments  ExchangePayment[]
+  creditReceipts    CreditReceipt[]
+  orderReceipts     OrderReceipt[]
+  incomeExpenses    IncomeExpenseTransaction[]
+  advances          AdvanceLedger[]
+
+  @@map("bank_accounts")
+}
+
+// ---------------------------------------------------------------------------
+//  Business day & shifts (§4, §5)
+// ---------------------------------------------------------------------------
+
+/// Anchors every "ມື້ໃໝ່ Balance ກາຍເປັນ ຈຳນວນຕັ້ງຕົ້ນ" rule and the
+/// AP/AR rollover of §9.2. Closing a day is what triggers the rollover job.
+model BusinessDay {
+  id         String    @id @default(cuid())
+  date       DateTime  @unique @db.Date
+  isClosed   Boolean   @default(false)
+  closedAt   DateTime?
+  closedById String?
+  createdAt  DateTime  @default(now())
+
+  shifts            Shift[]
+  cashTransactions  CashTransaction[]
+  bankTransactions  BankTransaction[]
+  bankNetBalances   BankNetBalance[]
+  stockNewBalances  StockNewSkuBalance[]
+  stockOldBalances  StockOldTypeBalance[]
+  goldApArOpenings  GoldApArOpening[]
+  cashApArOpenings  CashApArOpening[]
+  wacSnapshots      WacSnapshot[]
+  incomeExpenses    IncomeExpenseTransaction[]
+
+  @@index([date])
+  @@map("business_days")
+}
+
+/// ເປີດກະ / ປິດກະ. PAYMENT and VALUER cannot transact without an OPEN shift,
+/// and cannot reopen one on a day they have already closed (TOR §4, §5).
+model Shift {
+  id            String      @id @default(cuid())
+  userId        String
+  businessDayId String
+  status        ShiftStatus @default(OPEN)
+  openedAt      DateTime    @default(now())
+  closedAt      DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  rejectReason  String?
+  note          String?
+
+  user        User        @relation(fields: [userId], references: [id])
+  businessDay BusinessDay @relation(fields: [businessDayId], references: [id])
+
+  closingBalances  ShiftCashBalance[]
+  cashRequests     CashRequest[]
+  cashTransactions CashTransaction[]
+  buybacks         Buyback[]
+  exchanges        GoldExchange[]
+  credits          GoldCredit[]
+  handovers        GoldHandover[]
+
+  @@unique([userId, businessDayId])
+  @@index([status])
+  @@map("shifts")
+}
+
+/// The LAK/THB/USD a cashier closes the shift with. On approval these move
+/// into Module Cash (TOR §4.1).
+model ShiftCashBalance {
+  id       String   @id @default(cuid())
+  shiftId  String
+  currency Currency
+  amount   Decimal  @db.Decimal(18, 4)
+
+  shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, currency])
+  @@map("shift_cash_balances")
+}
+
+// ---------------------------------------------------------------------------
+//  §3.8 / §4 — Cash & Bank
+// ---------------------------------------------------------------------------
+
+model CashTransaction {
+  id            String      @id @default(cuid())
+  businessDayId String
+  shiftId       String?
+  type          CashTxnType
+  currency      Currency
+  amount        Decimal     @db.Decimal(18, 4)
+  refType       String?
+  refId         String?
+  note          String?
+  createdById   String
+  createdAt     DateTime    @default(now())
+  deletedAt     DateTime?
+  deletedById   String?
+
+  businessDay BusinessDay @relation(fields: [businessDayId], references: [id])
+  shift       Shift?      @relation(fields: [shiftId], references: [id])
+
+  @@index([businessDayId, currency])
+  @@index([refType, refId])
+  @@map("cash_transactions")
+}
+
+model BankTransaction {
+  id            String      @id @default(cuid())
+  businessDayId String
+  bankAccountId String
+  type          BankTxnType
+  currency      Currency
+  amount        Decimal     @db.Decimal(18, 4)
+  refType       String?
+  refId         String?
+  note          String?
+  createdById   String
+  createdAt     DateTime    @default(now())
+  deletedAt     DateTime?
+  deletedById   String?
+
+  businessDay BusinessDay @relation(fields: [businessDayId], references: [id])
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@index([businessDayId, bankAccountId])
+  @@map("bank_transactions")
+}
+
+/// ເງິນ Bank ສຸດທິ — the end-of-day figure only ADMIN/MANAGER may set.
+/// ຍອດເງິນຂາດດຸນ = ຍອດຕົວຈິງ (ledger) - ຍອດສຸດທິ (this).
+model BankNetBalance {
+  id            String   @id @default(cuid())
+  businessDayId String
+  bankAccountId String
+  currency      Currency
+  netAmount     Decimal  @db.Decimal(18, 4)
+  enteredById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  businessDay BusinessDay @relation(fields: [businessDayId], references: [id])
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@unique([businessDayId, bankAccountId, currency])
+  @@map("bank_net_balances")
+}
+
+/// ເບີກເງິນ (+) / ມອບເງິນ (-) — TOR §4.1 and §6.
+/// Money moves ONLY when the requester confirms COMPLETED after the
+/// Financial Controller has approved.
+model CashRequest {
+  id            String               @id @default(cuid())
+  shiftId       String
+  direction     CashRequestDirection
+  status        ApprovalStatus       @default(PENDING)
+  note          String?
+  requestedById String
+  approvedById  String?
+  approvedAt    DateTime?
+  rejectReason  String?
+  completedAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  deletedAt     DateTime?
+
+  shift Shift             @relation(fields: [shiftId], references: [id])
+  lines CashRequestLine[]
+
+  @@index([status])
+  @@map("cash_requests")
+}
+
+model CashRequestLine {
+  id        String   @id @default(cuid())
+  requestId String
+  currency  Currency
+  amount    Decimal  @db.Decimal(18, 4)
+
+  request CashRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, currency])
+  @@map("cash_request_lines")
+}
+
+// ---------------------------------------------------------------------------
+//  §5.1 — Buyback (ການຊື້ຄຳຄືນ)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String   @id @default(cuid())
+  /// ເບີໂທ 8 ໂຕ — the only customer identifier the TOR requires.
+  phone     String   @unique
+  nameLo    String?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  buybacks     Buyback[]
+  exchanges    GoldExchange[]
+  credits      GoldCredit[]
+  orders       Order[]
+  consignments Consignment[]
+
+  @@map("customers")
+}
+
+model Buyback {
+  id               String         @id @default(cuid())
+  code             String         @unique
+  shiftId          String
+  customerId       String
+  snapshotId       String
+  source           BuybackSource
+  goldTypeId       String
+  goldItemId       String?
+  weightG          Decimal        @db.Decimal(18, 4)
+  quantity         Int
+  /// %ຄຳ — only for OTHER_SHOP (ຄຳຕົ້ມ).
+  goldPercent      Decimal?       @db.Decimal(18, 4)
+  /// ລາຄາຊື້ຄືນໜ້າຮ້ານ
+  shopBuybackPrice Decimal        @db.Decimal(18, 4)
+  /// ຄ່າອ່ອນ / ຄ່າຫັກ
+  deduction        Decimal        @default(0) @db.Decimal(18, 4)
+  /// ລາຄາທີ່ຕ້ອງຈ່າຍ
+  payableAmount    Decimal        @db.Decimal(18, 4)
+  /// ຈຳນວນທີ່ຈ່າຍແລ້ວ (LAK).
+  paidAmount       Decimal        @default(0) @db.Decimal(18, 4)
+  /// ຍອດເງິນຄ້າງຈ່າຍ = ລວມເງິນທີ່ຕ້ອງຈ່າຍ − ຈ່າຍແລ້ວ (TOR §5.1 History).
+  outstandingAmount Decimal       @default(0) @db.Decimal(18, 4)
+  status           ApprovalStatus @default(PENDING)
+  createdById      String
+  approvedById     String?
+  approvedAt       DateTime?
+  rejectReason     String?
+  confirmedAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  deletedAt        DateTime?
+  deletedById      String?
+
+  shift    Shift            @relation(fields: [shiftId], references: [id])
+  customer Customer         @relation(fields: [customerId], references: [id])
+  snapshot PriceSnapshot    @relation(fields: [snapshotId], references: [id])
+  goldType GoldType         @relation(fields: [goldTypeId], references: [id])
+  goldItem GoldItem?        @relation(fields: [goldItemId], references: [id])
+  payments BuybackPayment[]
+
+  @@index([status, createdAt])
+  @@map("buybacks")
+}
+
+/// How the buyback was paid out. CHANGE (ເງິນທອນ) is LAK only:
+/// (amount * rate) - ລວມເງິນທີ່ຕ້ອງຈ່າຍ (LAK).
+model BuybackPayment {
+  id            String        @id @default(cuid())
+  buybackId     String
+  method        PaymentMethod
+  bankAccountId String?
+  currency      Currency
+  /// Price Rate Buyback applied at the time of payment.
+  rate          Decimal       @db.Decimal(18, 4)
+  amount        Decimal       @db.Decimal(18, 4)
+  amountLak     Decimal       @db.Decimal(18, 4)
+  changeLak     Decimal       @default(0) @db.Decimal(18, 4)
+  createdAt     DateTime      @default(now())
+
+  buyback     Buyback      @relation(fields: [buybackId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  @@map("buyback_payments")
+}
+
+// ---------------------------------------------------------------------------
+//  §5.2 — ລາຍການປ່ຽນເປັນເງິນ (Gold Exchange & Trade-in)
+// ---------------------------------------------------------------------------
+
+/// The CRITICAL rule of §5.2 is enforced in the domain layer before save:
+///   (ເກນນ້ຳໜັກຄຳເກົ່າ standard) - (ລວມນ້ຳໜັກຄຳໃໝ່ + ລວມນ້ຳໜັກເກົ່າຄົງເຫຼືອ) == 0
+model GoldExchange {
+  id             String          @id @default(cuid())
+  code           String          @unique
+  shiftId        String
+  customerId     String
+  snapshotId     String
+  txnType        ExchangeTxnType
+  shapeCondition ShapeCondition
+  /// ຄ່າອ່ອນ total for the transaction.
+  softGoldFee    Decimal         @default(0) @db.Decimal(18, 4)
+  /// ລວມເງິນຕ້ອງຈ່າຍ = ລາຄາຊື້ຄືນໜ້າຮ້ານ - ຄ່າອ່ອນ - ຄ່າຫຍຸບ - ຄ່າປ່ຽນຄຳແທ່ງ - ຄ່າລາຍ
+  totalPayable   Decimal         @default(0) @db.Decimal(18, 4)
+  /// ຈຳນວນທີ່ຈ່າຍແລ້ວ (LAK).
+  paidAmount     Decimal         @default(0) @db.Decimal(18, 4)
+  /// ຍອດເງິນຄ້າງຈ່າຍ (TOR §5.2 History).
+  outstandingAmount Decimal      @default(0) @db.Decimal(18, 4)
+  status         ApprovalStatus  @default(PENDING)
+  createdById    String
+  approvedById   String?
+  approvedAt     DateTime?
+  rejectReason   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+  deletedById    String?
+
+  shift    Shift         @relation(fields: [shiftId], references: [id])
+  customer Customer      @relation(fields: [customerId], references: [id])
+  snapshot PriceSnapshot @relation(fields: [snapshotId], references: [id])
+
+  oldLines       ExchangeOldLine[]
+  newLines       ExchangeNewLine[]
+  remainingLines ExchangeRemainingLine[]
+  payments       ExchangePayment[]
+
+  @@index([status, createdAt])
+  @@map("gold_exchanges")
+}
+
+/// ລາຍການຄຳເກົ່າ the customer brings in.
+model ExchangeOldLine {
+  id               String  @id @default(cuid())
+  exchangeId       String
+  goldTypeId       String
+  goldItemId       String?
+  weightG          Decimal @db.Decimal(18, 4)
+  quantity         Int
+  /// ເກນນ້ຳໜັກ standard for this line, used by the zero-balance validation.
+  standardWeightG  Decimal @db.Decimal(18, 4)
+  shopBuybackPrice Decimal @default(0) @db.Decimal(18, 4)
+
+  exchange GoldExchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+  goldType GoldType     @relation(fields: [goldTypeId], references: [id])
+  goldItem GoldItem?    @relation(fields: [goldItemId], references: [id])
+
+  @@map("exchange_old_lines")
+}
+
+/// ລາຍການຄຳໃໝ່ the customer takes away.
+model ExchangeNewLine {
+  id            String  @id @default(cuid())
+  exchangeId    String
+  goldSkuId     String
+  cabinetId     String?
+  weightG       Decimal @db.Decimal(18, 4)
+  quantity      Int
+  /// ຄ່າຫຍຸບ — zero when txnType is FREE_EXCHANGE.
+  humpFee       Decimal @default(0) @db.Decimal(18, 4)
+  /// ຄ່າປ່ຽນຄຳແທ່ງ
+  barConvertFee Decimal @default(0) @db.Decimal(18, 4)
+  /// ຄ່າລາຍ
+  patternFee    Decimal @default(0) @db.Decimal(18, 4)
+
+  exchange GoldExchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+  goldSku  GoldSku      @relation(fields: [goldSkuId], references: [id])
+  cabinet  Cabinet?     @relation(fields: [cabinetId], references: [id])
+
+  @@map("exchange_new_lines")
+}
+
+/// ຄຳເກົ່າຄົງເຫຼືອ — old gold left over, paid out in cash.
+model ExchangeRemainingLine {
+  id               String  @id @default(cuid())
+  exchangeId       String
+  weightG          Decimal @db.Decimal(18, 4)
+  quantity         Int
+  shopBuybackPrice Decimal @db.Decimal(18, 4)
+
+  exchange GoldExchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+
+  @@map("exchange_remaining_lines")
+}
+
+// ---------------------------------------------------------------------------
+//  §5.3 — ລາຍການສິນເຊື່ອ (Gold Credit / Installment)
+// ---------------------------------------------------------------------------
+
+model GoldCredit {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  shiftId     String
+  customerId  String
+  goldItemId  String
+  cabinetId   String?
+  weightG     Decimal        @db.Decimal(18, 4)
+  quantity    Int
+  /// ລາຄາຂາຍ
+  sellPrice   Decimal        @db.Decimal(18, 4)
+  /// ເງິນວາງດາວ
+  downPayment Decimal        @db.Decimal(18, 4)
+  /// ຍອດເງິນສິນເຊື່ອຕິດໜີ້ = ລາຄາຂາຍ - ເງິນວາງດາວ
+  outstanding Decimal        @db.Decimal(18, 4)
+  /// ຈຳນວນທີ່ຮັບແລ້ວທັງໝົດ (LAK).
+  paidAmount  Decimal        @default(0) @db.Decimal(18, 4)
+  status      ApprovalStatus @default(PENDING)
+  createdById String
+  approvedById String?
+  approvedAt  DateTime?
+  rejectReason String?
+  settledAt   DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+  deletedById String?
+
+  shift    Shift    @relation(fields: [shiftId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+  goldItem GoldItem @relation(fields: [goldItemId], references: [id])
+  cabinet  Cabinet? @relation(fields: [cabinetId], references: [id])
+  receipts CreditReceipt[]
+
+  @@index([status, createdAt])
+  @@map("gold_credits")
+}
+
+/// ເງິນວາງດາວ and later instalments. Change limits from §5.3:
+/// THB change may not exceed 1,000 THB; USD change may not exceed 100 USD.
+model CreditReceipt {
+  id            String        @id @default(cuid())
+  creditId      String
+  method        PaymentMethod
+  bankAccountId String?
+  currency      Currency
+  /// Price Rate Sell applied at the time of receipt.
+  rate          Decimal       @db.Decimal(18, 4)
+  amount        Decimal       @db.Decimal(18, 4)
+  amountLak     Decimal       @db.Decimal(18, 4)
+  changeLak     Decimal       @default(0) @db.Decimal(18, 4)
+  isDownPayment Boolean       @default(false)
+  createdById   String
+  createdAt     DateTime      @default(now())
+
+  credit      GoldCredit   @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  @@map("credit_receipts")
+}
+
+// ---------------------------------------------------------------------------
+//  §7 — ລາຍການ Order
+// ---------------------------------------------------------------------------
+
+model Order {
+  id             String      @id @default(cuid())
+  code           String      @unique
+  /// ເລກບິນ 4 ຕົວຫຼັກ (TOR §7).
+  billNo         String
+  /// ປະເພດສິນຄ້າ IT / ITP.
+  productType    OrderProductType
+  /// ຊື່ພະນັກງານ ທີ່ຮັບ Order.
+  staffName      String
+  customerId     String
+  goldItemId     String
+  /// ຊ່າງ/Supplier ທີ່ສັ່ງເຮັດ — ຕັ້ງເມື່ອປ່ຽນເປັນ 'ສັ່ງຊ່າງ ສຳເລັດ'.
+  supplierId     String?
+  /// ວັນທີຮັບເຄື່ອງຈາກຊ່າງ.
+  receivedFromSmithAt DateTime?
+  /// ວັນທີລູກຄ້າມາຮັບເຄື່ອງ.
+  customerPickupAt    DateTime?
+  weightG        Decimal     @db.Decimal(18, 4)
+  quantity       Int
+  /// TOTAL LAK owed by the customer.
+  totalAmount    Decimal     @db.Decimal(18, 4)
+  /// Running total of what the customer has actually paid.
+  receivedAmount Decimal     @default(0) @db.Decimal(18, 4)
+  /// totalAmount - receivedAmount; when it reaches 0 the order auto-completes.
+  balanceAmount  Decimal     @default(0) @db.Decimal(18, 4)
+  status         OrderStatus @default(ORDER_PLACED)
+  note           String?
+  createdById    String
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+  deletedById    String?
+
+  customer Customer       @relation(fields: [customerId], references: [id])
+  goldItem GoldItem       @relation(fields: [goldItemId], references: [id])
+  supplier PartnerSource? @relation(fields: [supplierId], references: [id])
+
+  receipts      OrderReceipt[]
+  statusHistory OrderStatusHistory[]
+  advances      AdvanceLedger[]
+
+  @@index([status, createdAt])
+  @@index([billNo])
+  @@map("orders")
+}
+
+/// Money in from, or refunded to, the customer against an order.
+model OrderReceipt {
+  id            String        @id @default(cuid())
+  orderId       String
+  method        PaymentMethod
+  bankAccountId String?
+  currency      Currency
+  rate          Decimal       @db.Decimal(18, 4)
+  amount        Decimal       @db.Decimal(18, 4)
+  amountLak     Decimal       @db.Decimal(18, 4)
+  changeLak     Decimal       @default(0) @db.Decimal(18, 4)
+  /// True when the shop is paying money back to the customer.
+  isRefund      Boolean       @default(false)
+  isDeposit     Boolean       @default(false)
+  createdById   String
+  createdAt     DateTime      @default(now())
+
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  @@map("order_receipts")
+}
+
+model OrderStatusHistory {
+  id          String      @id @default(cuid())
+  orderId     String
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  note        String?
+  changedById String
+  createdAt   DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+// ---------------------------------------------------------------------------
+//  §7.1 / §7.2 — Stock (NEW) ແລະ Stock (OLD)
+// ---------------------------------------------------------------------------
+
+/// The header of an IN / OUT / TRANSFER action. The UI "Add" button appends
+/// StockMovementLine rows; totals are derived from the lines.
+/// Stock OUT must be approved by ADMIN/MANAGER before it takes effect.
+model StockMovement {
+  id            String            @id @default(cuid())
+  code          String            @unique
+  scope         StockScope
+  type          StockMovementType
+  /// Present for IN (ແຫຼ່ງທີ່ມາ) and OUT (ແຫຼ່ງສົ່ງມອບ).
+  partnerId     String?
+  /// Set when OUT goes to a display cabinet.
+  cabinetId     String?
+  /// ແປງສະພາບ — ຍ້ອມ / ກັດ / ຫຼອມ (Stock OLD OUT).
+  transformType TransformType?
+  /// %ຄຳ for Stock OLD OUT to ຊ່າງນອກ/ອື່ນໆ.
+  goldPercent   Decimal?          @db.Decimal(18, 4)
+  /// ນ້ຳໜັກ(g) ທີ່ໄດ້ຮັບ = ROUNDUP(ລວມ GOLD(g) * %ຄຳ, 0)
+  expectedReturnG Decimal?        @db.Decimal(18, 4)
+  totalQuantity Int               @default(0)
+  totalGoldG    Decimal           @default(0) @db.Decimal(18, 4)
+  /// ຕົ້ນທຶນຄຳ for the whole movement.
+  totalCost     Decimal           @default(0) @db.Decimal(18, 4)
+  /// ລາຄາ/g (WAC for OUT, cost/weight for IN).
+  pricePerG     Decimal           @default(0) @db.Decimal(18, 4)
+  /// ລາຄາ/ບາດ = ລາຄາ/g * 15
+  pricePerBaht  Decimal           @default(0) @db.Decimal(18, 4)
+  /// ຄ່າແຮງ (THB) on Stock NEW IN — becomes an AP (Cash) liability (§9.2).
+  laborFeeThb   Decimal           @default(0) @db.Decimal(18, 4)
+  laborFeePaid  Boolean           @default(false)
+  status        ApprovalStatus    @default(PENDING)
+  note          String?
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  rejectReason  String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+
+  partner PartnerSource? @relation(fields: [partnerId], references: [id])
+  cabinet Cabinet?       @relation(fields: [cabinetId], references: [id])
+
+  lines        StockMovementLine[]
+  newLedger    StockNewLedger[]
+  oldLedger    StockOldLedger[]
+  factoryTrack FactoryOutTracking?
+  goldApArRows GoldApArLedger[]
+
+  @@index([scope, type, status])
+  @@map("stock_movements")
+}
+
+/// One line of a movement. Stock NEW lines reference a SKU; Stock OLD lines
+/// reference a ປະເພດຄຳ. A TRANSFER carries both sides.
+model StockMovementLine {
+  id         String  @id @default(cuid())
+  movementId String
+  goldSkuId  String?
+  goldTypeId String?
+  weightG    Decimal @db.Decimal(18, 4)
+  quantity   Int     @default(1)
+  /// GOLD (g) = weight_g * ຈຳນວນ
+  goldG      Decimal @db.Decimal(18, 4)
+  cost       Decimal @default(0) @db.Decimal(18, 4)
+  /// Distinguishes the source side from the destination side of a TRANSFER.
+  isCounterpart Boolean @default(false)
+
+  movement StockMovement @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  goldSku  GoldSku?      @relation(fields: [goldSkuId], references: [id])
+  goldType GoldType?     @relation(fields: [goldTypeId], references: [id])
+
+  @@index([movementId])
+  @@map("stock_movement_lines")
+}
+
+/// History of Stock (NEW) with the running columns of §7.1.
+///   WEIGHT  = previous WEIGHT  + GOLD(g) IN - GOLD(g) OUT
+///   ຕົ້ນທຶນ  = previous ຕົ້ນທຶນ + PRICE (IN) - PRICE (OUT)
+/// The newest row supplies GOLD (g) NEW and ຕົ້ນທຶນຄຳ NEW.
+model StockNewLedger {
+  id           String   @id @default(cuid())
+  movementId   String?
+  businessDate DateTime @db.Date
+  partnerLabel String?
+  typeLabel    String
+  goldInG      Decimal  @default(0) @db.Decimal(18, 4)
+  goldOutG     Decimal  @default(0) @db.Decimal(18, 4)
+  /// Running total weight after this row.
+  weightG      Decimal  @db.Decimal(18, 4)
+  priceIn      Decimal  @default(0) @db.Decimal(18, 4)
+  priceOut     Decimal  @default(0) @db.Decimal(18, 4)
+  /// Running total cost after this row.
+  cost         Decimal  @db.Decimal(18, 4)
+  sequence     Int
+  createdById  String
+  createdAt    DateTime @default(now())
+  deletedAt    DateTime?
+
+  movement StockMovement? @relation(fields: [movementId], references: [id])
+
+  @@unique([businessDate, sequence])
+  @@index([createdAt])
+  @@map("stock_new_ledger")
+}
+
+/// Ready to Gold — per-SKU daily counts (§7.1).
+/// Balance = ຈຳນວນຕັ້ງຕົ້ນ + IN - OUT; tomorrow's ຕັ້ງຕົ້ນ is today's Balance.
+model StockNewSkuBalance {
+  id            String   @id @default(cuid())
+  businessDayId String
+  goldSkuId     String
+  openingQty    Int      @default(0)
+  inQty         Int      @default(0)
+  outQty        Int      @default(0)
+  balanceQty    Int      @default(0)
+  /// ນ້ຳໜັກ g ລວມ = balanceQty * SKU weight
+  totalWeightG  Decimal  @default(0) @db.Decimal(18, 4)
+  updatedAt     DateTime @updatedAt
+
+  businessDay BusinessDay @relation(fields: [businessDayId], references: [id])
+  goldSku     GoldSku     @relation(fields: [goldSkuId], references: [id])
+
+  @@unique([businessDayId, goldSkuId])
+  @@map("stock_new_sku_balances")
+}
+
+/// History of Stock (OLD) — same running-column contract as Stock NEW.
+model StockOldLedger {
+  id           String   @id @default(cuid())
+  movementId   String?
+  goldTypeId   String
+  businessDate DateTime @db.Date
+  partnerLabel String?
+  typeLabel    String
+  goldInG      Decimal  @default(0) @db.Decimal(18, 4)
+  goldOutG     Decimal  @default(0) @db.Decimal(18, 4)
+  weightG      Decimal  @db.Decimal(18, 4)
+  priceIn      Decimal  @default(0) @db.Decimal(18, 4)
+  priceOut     Decimal  @default(0) @db.Decimal(18, 4)
+  cost         Decimal  @db.Decimal(18, 4)
+  sequence     Int
+  createdById  String
+  createdAt    DateTime @default(now())
+  deletedAt    DateTime?
+
+  movement StockMovement? @relation(fields: [movementId], references: [id])
+  goldType GoldType       @relation(fields: [goldTypeId], references: [id])
+
+  @@unique([businessDate, sequence])
+  @@index([goldTypeId, createdAt])
+  @@map("stock_old_ledger")
+}
+
+/// Per-ປະເພດຄຳ daily balances (§7.2).
+///   ນໍ້າໜັກ(g) ຄົງເຫຼືອ = ຕັ້ງຕົ້ນ + GOLD(g) IN - GOLD(g) OUT
+///   ຕົ້ນທຶນຄົງເຫຼືອ      = ຕັ້ງຕົ້ນ + PRICE (IN) - PRICE (OUT)
+model StockOldTypeBalance {
+  id             String   @id @default(cuid())
+  businessDayId  String
+  goldTypeId     String
+  openingWeightG Decimal  @default(0) @db.Decimal(18, 4)
+  openingCost    Decimal  @default(0) @db.Decimal(18, 4)
+  inG            Decimal  @default(0) @db.Decimal(18, 4)
+  outG           Decimal  @default(0) @db.Decimal(18, 4)
+  priceIn        Decimal  @default(0) @db.Decimal(18, 4)
+  priceOut       Decimal  @default(0) @db.Decimal(18, 4)
+  closingWeightG Decimal  @default(0) @db.Decimal(18, 4)
+  closingCost    Decimal  @default(0) @db.Decimal(18, 4)
+  updatedAt      DateTime @updatedAt
+
+  businessDay BusinessDay @relation(fields: [businessDayId], references: [id])
+  goldType    GoldType    @relation(fields: [goldTypeId], references: [id])
+
+  @@unique([businessDayId, goldTypeId])
+  @@map("stock_old_type_balances")
+}
+
+/// ມອບຄຳລະຫວ່າງມື້ — Payment hands old gold to the Warehouse mid-day (§4.3).
+model GoldHandover {
+  id           String         @id @default(cuid())
+  code         String         @unique
+  shiftId      String
+  goldTypeId   String
+  weightG      Decimal        @db.Decimal(18, 4)
+  note         String?
+  status       ApprovalStatus @default(PENDING)
+  createdById  String
+  approvedById String?
+  approvedAt   DateTime?
+  rejectReason String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  shift    Shift    @relation(fields: [shiftId], references: [id])
+  goldType GoldType @relation(fields: [goldTypeId], references: [id])
+
+  @@index([status])
+  @@map("gold_handovers")
+}
+
+// ---------------------------------------------------------------------------
+//  §7.3 — ຕິດຕາມ Stock Out ໄປ FACTORY
+// ---------------------------------------------------------------------------
+
+/// A Stock OLD OUT to FACTORY does NOT deduct stock when approved. It parks
+/// here until FACTORY reports the assessed weight; only then does the system
+/// post the Stock (OLD) OUT and the AP/AR (GOLD) row, inside one transaction.
+/// After COMPLETED, only ADMIN/MANAGER may edit (§7.3 security rule).
+model FactoryOutTracking {
+  id                 String             @id @default(cuid())
+  movementId         String             @unique
+  partnerId          String
+  goldOutG           Decimal            @db.Decimal(18, 4)
+  /// ນໍ້າໜັກg FACTORY ປະເມີນ — entered when the factory reports back.
+  factoryAssessedG   Decimal?           @db.Decimal(18, 4)
+  cost               Decimal            @db.Decimal(18, 4)
+  status             FactoryTrackStatus @default(AWAITING_ASSESSMENT)
+  completedAt        DateTime?
+  updatedById        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  movement StockMovement @relation(fields: [movementId], references: [id])
+  partner  PartnerSource @relation(fields: [partnerId], references: [id])
+
+  @@index([status])
+  @@map("factory_out_tracking")
+}
+
+// ---------------------------------------------------------------------------
+//  §8 — AP/AR (GOLD)
+// ---------------------------------------------------------------------------
+
+/// Maps a gold movement onto a sub-ledger posting.
+///
+/// The TOR is self-contradictory here: four bullets in §8.3 are titled
+/// "ເພີ່ມ AP (+)" while their body reads "ບັນທຶກຫຼຸດຍອດ", and §8.1 defines gold
+/// sent OUT to FACTORY as AR while §8.3 posts it to AP. Rather than freezing
+/// one reading into code, the mapping is DATA: seeded from §8.1's definitions
+/// and editable by an Admin, so correcting it is a settings change.
+model GoldApArPostingRule {
+  id        String            @id @default(cuid())
+  scope     StockScope
+  type      StockMovementType
+  partnerId String
+  /// Whose obligation this posting actually moves, when that is not the partner
+  /// on the movement. TOR §8.4 pairs Stock IN from EASY with Stock OUT to
+  /// WITHDRAW: the handover is recorded against WITHDRAW, but it is EASY's
+  /// payable that it clears, so both halves of the pair must land on the same
+  /// row of the §8.2 per-partner table. Null = book against `partner`.
+  counterpartyId String?
+  side      ApArSide
+  /// +1 increases the sub-ledger, -1 decreases it.
+  sign      Int
+  isActive  Boolean           @default(true)
+  note      String?
+  updatedAt DateTime          @updatedAt
+
+  partner      PartnerSource  @relation("RulePartner", fields: [partnerId], references: [id])
+  counterparty PartnerSource? @relation("RuleCounterparty", fields: [counterpartyId], references: [id])
+
+  @@unique([scope, type, partnerId])
+  @@map("gold_ap_ar_posting_rules")
+}
+
+/// History of AP/AR (GOLD) per partner, with the same running WEIGHT and
+/// ຕົ້ນທຶນ accumulators as the stock ledgers (§8.2).
+model GoldApArLedger {
+  id           String      @id @default(cuid())
+  partnerId    String
+  side         ApArSide
+  refType      ApArRefType
+  movementId   String?
+  businessDate DateTime    @db.Date
+  typeLabel    String
+  goldInG      Decimal     @default(0) @db.Decimal(18, 4)
+  goldOutG     Decimal     @default(0) @db.Decimal(18, 4)
+  weightG      Decimal     @db.Decimal(18, 4)
+  priceIn      Decimal     @default(0) @db.Decimal(18, 4)
+  priceOut     Decimal     @default(0) @db.Decimal(18, 4)
+  cost         Decimal     @db.Decimal(18, 4)
+  sequence     Int
+  note         String?
+  createdById  String
+  createdAt    DateTime    @default(now())
+  deletedAt    DateTime?
+
+  partner  PartnerSource  @relation(fields: [partnerId], references: [id])
+  movement StockMovement? @relation(fields: [movementId], references: [id])
+
+  @@unique([partnerId, side, businessDate, sequence])
+  @@index([side, businessDate])
+  @@map("gold_ap_ar_ledger")
+}
+
+/// ຍອດຕັ້ງຕົ້ນ per partner per day; end-of-day net rolls into the next day.
+model GoldApArOpening {
+  id             String      @id @default(cuid())
+  businessDayId  String
+  partnerId      String
+  side           ApArSide
+  openingWeightG Decimal     @default(0) @db.Decimal(18, 4)
+  openingCost    Decimal     @default(0) @db.Decimal(18, 4)
+  movementG      Decimal     @default(0) @db.Decimal(18, 4)
+  closingWeightG Decimal     @default(0) @db.Decimal(18, 4)
+  closingCost    Decimal     @default(0) @db.Decimal(18, 4)
+  updatedAt      DateTime    @updatedAt
+
+  businessDay BusinessDay   @relation(fields: [businessDayId], references: [id])
+  partner     PartnerSource @relation(fields: [partnerId], references: [id])
+
+  @@unique([businessDayId, partnerId, side])
+  @@map("gold_ap_ar_openings")
+}
+
+// ---------------------------------------------------------------------------
+//  §9 — AP/AR (Cash)
+// ---------------------------------------------------------------------------
+
+/// Every cash-side obligation, split by currency (§9.1).
+///
+/// AP (+) : ເງິນມັດຈໍາ Order ຮັບລ່ວງໜ້າ, ຄ່າແຮງຊ່າງ/FACTORY ຄ້າງຈ່າຍ
+/// AP (-) : Order Completed, ຈ່າຍຄ່າແຮງ
+/// AR (+) : ຍອດສິນເຊື່ອໃໝ່, Order ຄ້າງ
+/// AR (-) : ຈ່າຍຄ່າງວດ, ຊຳຣະ Order
+model CashApArLedger {
+  id           String      @id @default(cuid())
+  side         ApArSide
+  refType      ApArRefType
+  refId        String?
+  /// ແຫຼ່ງ Supplier ທີ່ພັນທະນີ້ຜູກກັບ (TOR §9.3, §9.4).
+  partnerId    String?
+  /// ປະເພດລາຍການ AP-AR (Cash) (TOR §9.1).
+  categoryId   String?
+  businessDate DateTime    @db.Date
+  currency     Currency
+  amountIn     Decimal     @default(0) @db.Decimal(18, 4)
+  amountOut    Decimal     @default(0) @db.Decimal(18, 4)
+  /// Running net after this row.
+  balance      Decimal     @db.Decimal(18, 4)
+  sequence     Int
+  note         String?
+  createdById  String
+  createdAt    DateTime    @default(now())
+  deletedAt    DateTime?
+
+  partner  PartnerSource?   @relation(fields: [partnerId], references: [id])
+  category ApArCashCategory? @relation(fields: [categoryId], references: [id])
+
+  @@unique([side, currency, businessDate, sequence])
+  @@index([refType, refId])
+  @@index([partnerId, side])
+  @@map("cash_ap_ar_ledger")
+}
+
+/// ຍອດຕັ້ງຕົ້ນ per side per currency per day.
+/// Rollover Rule (§9.2): today's closing net becomes tomorrow's opening.
+model CashApArOpening {
+  id             String      @id @default(cuid())
+  businessDayId  String
+  side           ApArSide
+  currency       Currency
+  openingAmount  Decimal     @default(0) @db.Decimal(18, 4)
+  increaseAmount Decimal     @default(0) @db.Decimal(18, 4)
+  decreaseAmount Decimal     @default(0) @db.Decimal(18, 4)
+  closingAmount  Decimal     @default(0) @db.Decimal(18, 4)
+  updatedAt      DateTime    @updatedAt
+
+  businessDay BusinessDay @relation(fields: [businessDayId], references: [id])
+
+  @@unique([businessDayId, side, currency])
+  @@map("cash_ap_ar_openings")
+}
+
+// ---------------------------------------------------------------------------
+//  §3.8 — WAC (Weighted Average Cost)
+// ---------------------------------------------------------------------------
+
+/// A materialised WAC reading per day (§3.8). Always reflects the latest
+/// Stock NEW and Stock OLD rows:
+///   ລວມ GOLD(g)  = NEW GOLD(g) + OLD GOLD(g)
+///   ລວມຕົ້ນທຶນ    = NEW ຕົ້ນທຶນ + OLD ຕົ້ນທຶນ
+///   ລາຄາ/g       = ລວມຕົ້ນທຶນ / ລວມ GOLD(g)
+///   ລາຄາ/ບາດ     = ລາຄາ/g * 15
+model WacSnapshot {
+  id            String   @id @default(cuid())
+  businessDayId String
+  newWeightG    Decimal  @default(0) @db.Decimal(18, 4)
+  newCost       Decimal  @default(0) @db.Decimal(18, 4)
+  oldWeightG    Decimal  @default(0) @db.Decimal(18, 4)
+  oldCost       Decimal  @default(0) @db.Decimal(18, 4)
+  totalWeightG  Decimal  @default(0) @db.Decimal(18, 4)
+  totalCost     Decimal  @default(0) @db.Decimal(18, 4)
+  pricePerG     Decimal  @default(0) @db.Decimal(18, 4)
+  pricePerBaht  Decimal  @default(0) @db.Decimal(18, 4)
+  computedAt    DateTime @default(now())
+
+  businessDay BusinessDay @relation(fields: [businessDayId], references: [id])
+
+  @@unique([businessDayId])
+  @@map("wac_snapshots")
+}
+
+// ---------------------------------------------------------------------------
+//  §3.7 — ເພີ້ມລາຍການຮັບຈ່າຍ ແລະ ຈັດການລາຍຮັບລາຍຈ່າຍ
+// ---------------------------------------------------------------------------
+
+/// ໝວດລາຍການຮັບ/ຈ່າຍ that the shop maintains itself, so a new expense type
+/// does not need a code change.
+model IncomeExpenseCategory {
+  id        String            @id @default(cuid())
+  code      String            @unique
+  nameLo    String
+  kind      IncomeExpenseKind
+  sortOrder Int               @default(0)
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  deletedAt DateTime?
+
+  transactions IncomeExpenseTransaction[]
+
+  @@index([kind, sortOrder])
+  @@map("income_expense_categories")
+}
+
+/// One ລາຍຮັບ / ລາຍຈ່າຍ posting. Writes through to CashTransaction or
+/// BankTransaction so Module Cash and Module Bank stay the single source of
+/// truth for balances.
+model IncomeExpenseTransaction {
+  id            String            @id @default(cuid())
+  code          String            @unique
+  businessDayId String
+  categoryId    String
+  kind          IncomeExpenseKind
+  method        PaymentMethod
+  bankAccountId String?
+  currency      Currency
+  amount        Decimal           @db.Decimal(18, 4)
+  note          String?
+  createdById   String
+  createdAt     DateTime          @default(now())
+  deletedAt     DateTime?
+  deletedById   String?
+
+  businessDay BusinessDay           @relation(fields: [businessDayId], references: [id])
+  category    IncomeExpenseCategory @relation(fields: [categoryId], references: [id])
+  bankAccount BankAccount?          @relation(fields: [bankAccountId], references: [id])
+
+  @@index([businessDayId, kind])
+  @@map("income_expense_transactions")
+}
+
+// ---------------------------------------------------------------------------
+//  §3.7 — Module ຝາກສິນຄ້າ
+// ---------------------------------------------------------------------------
+
+/// Gold a customer leaves with the shop for safekeeping.
+///
+/// Deliberately NOT part of Stock: the shop holds it but does not own it, so
+/// it must never reach WAC, COH Gold or the AP/AR ledgers.
+model Consignment {
+  id           String            @id @default(cuid())
+  code         String            @unique
+  /// BILL ID — the shop's own reference on the paper slip.
+  billId       String
+  customerId   String
+  /// ຊື່ ລູກຄ້າ as written on the slip.
+  customerName String
+  /// ຊື່ ພະນັກງານ who took it in.
+  staffName    String
+  totalWeightG Decimal           @default(0) @db.Decimal(18, 4)
+  totalQuantity Int              @default(0)
+  status       ConsignmentStatus @default(HELD)
+  returnedAt   DateTime?
+  returnedById String?
+  note         String?
+  createdById  String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+
+  customer Customer          @relation(fields: [customerId], references: [id])
+  lines    ConsignmentLine[]
+
+  @@index([status, createdAt])
+  @@index([billId])
+  @@map("consignments")
+}
+
+model ConsignmentLine {
+  id            String  @id @default(cuid())
+  consignmentId String
+  nameLo        String
+  weightG       Decimal @db.Decimal(18, 4)
+  quantity      Int
+
+  consignment Consignment @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+
+  @@index([consignmentId])
+  @@map("consignment_lines")
+}
+
+// ---------------------------------------------------------------------------
+//  §7 — Module Advace (Customer Advance Deposits)
+// ---------------------------------------------------------------------------
+
+/// ເງິນມັດຈໍາ Order ຮັບລ່ວງໜ້າ.
+///
+/// The updated TOR moves Order deposits OUT of AP (Cash) and into their own
+/// Advance ledger: AP (Cash) is now purely ຄ່າແຮງຊ່າງຄ້າງຈ່າຍ (§9.2), while an
+/// advance is money held against an undelivered order. COH subtracts it, so
+/// cash the shop is still holding for a customer never reads as its own.
+///
+///   Order ສຳເລັດ            -> +Advance
+///   ຢືນຢັນລູກຄ້າຮັບເຄື່ອງ   -> −Advance
+model AdvanceLedger {
+  id            String        @id @default(cuid())
+  orderId       String
+  businessDate  DateTime      @db.Date
+  currency      Currency
+  /// ຍອດເພີ່ມ Advance (+)
+  amountIn      Decimal       @default(0) @db.Decimal(18, 4)
+  /// ຍອດຫຼຸດ Advance (−)
+  amountOut     Decimal       @default(0) @db.Decimal(18, 4)
+  /// Running net after this row.
+  balance       Decimal       @db.Decimal(18, 4)
+  method        PaymentMethod?
+  bankAccountId String?
+  sequence      Int
+  note          String?
+  createdById   String
+  createdAt     DateTime      @default(now())
+  deletedAt     DateTime?
+
+  order       Order        @relation(fields: [orderId], references: [id])
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  @@unique([currency, businessDate, sequence])
+  @@index([orderId])
+  @@map("advance_ledger")
+}
+
+// ---------------------------------------------------------------------------
+//  §9.1 — Module ລາຍການ AP-AR (Cash)
+// ---------------------------------------------------------------------------
+
+/// ປະເພດລາຍການ AP-AR (Cash), maintained by the shop.
+/// `side` scopes a category to AP, AR, or either.
+model ApArCashCategory {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  nameLo    String
+  /// null = usable on both sides.
+  side      ApArSide?
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  ledgerRows CashApArLedger[]
+
+  @@map("ap_ar_cash_categories")
+}
+
+// ---------------------------------------------------------------------------
+//  §5.2 — Exchange payment legs
+// ---------------------------------------------------------------------------
+
+/// Mirrors BuybackPayment: the updated §5.2 gives ປ່ຽນເປັນເງິນ the same
+/// Cash/Bank payment step, with the same LAK-only CHANGE rule.
+model ExchangePayment {
+  id            String        @id @default(cuid())
+  exchangeId    String
+  method        PaymentMethod
+  bankAccountId String?
+  currency      Currency
+  /// Price Rate Buyback applied at the time of payment.
+  rate          Decimal       @db.Decimal(18, 4)
+  amount        Decimal       @db.Decimal(18, 4)
+  amountLak     Decimal       @db.Decimal(18, 4)
+  changeLak     Decimal       @default(0) @db.Decimal(18, 4)
+  createdById   String
+  createdAt     DateTime      @default(now())
+
+  exchange    GoldExchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  @@index([exchangeId])
+  @@map("exchange_payments")
+}

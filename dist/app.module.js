@@ -41,9 +41,9 @@ exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            // Root .env last so a local apps/api/.env can override app-specific
+            // Root .env last so a local backend/.env can override app-specific
             // settings, while DATABASE_URL is defined only at the root.
-            config_1.ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] }),
+            config_1.ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../.env'] }),
             prisma_module_1.PrismaModule,
             common_module_1.CommonModule,
             notifications_module_1.NotificationsModule,
