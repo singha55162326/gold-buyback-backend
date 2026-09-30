@@ -14,7 +14,8 @@
     "reset": "prisma migrate reset --force",
     "studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
-    "verify-pricing": "tsx prisma/verify-pricing.ts"
+    "verify-pricing": "tsx prisma/verify-pricing.ts",
+    "create-user": "tsx prisma/create-user.ts"
   },
   "dependencies": {
     "@kpv/domain": "*",
