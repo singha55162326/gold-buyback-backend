@@ -449,6 +449,10 @@ model JewelryConversionFee {
   effectiveAt    DateTime @default(now())
   createdById    String
   createdAt      DateTime @default(now())
+  /// Retiring a weight appends a row with this set, rather than deleting
+  /// anything: the table stays append-only, so a quote made last month can
+  /// still be re-derived from the row that was newest at the time.
+  deletedAt      DateTime?
 
   tier WeightTier @relation(fields: [tierCode], references: [code])
 
@@ -467,6 +471,8 @@ model BarConversionFee {
   effectiveAt   DateTime @default(now())
   createdById   String
   createdAt     DateTime @default(now())
+  /// See JewelryConversionFee.deletedAt — a tombstone version, not a delete.
+  deletedAt     DateTime?
 
   @@index([weightG, effectiveAt])
   @@map("bar_conversion_fees")

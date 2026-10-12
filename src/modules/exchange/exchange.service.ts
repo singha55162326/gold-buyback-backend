@@ -91,10 +91,17 @@ export class ExchangeService {
       this.prisma.barConversionFee.findMany({ orderBy: { effectiveAt: 'desc' } }),
     ]);
 
+    // Newest row per weight wins. A newest row carrying `deletedAt` is a
+    // tombstone: the weight has been retired, so it must claim the key and
+    // then be dropped — skipping it outright would let the superseded version
+    // underneath it keep quoting a fee that was deliberately removed.
     const feeByWeight = new Map<string, { good: Decimal; damaged: Decimal }>();
+    const seenJewelry = new Set<string>();
     for (const fee of jewelryFees) {
       const key = fee.weightG.toFixed();
-      if (feeByWeight.has(key)) continue; // newest wins
+      if (seenJewelry.has(key)) continue;
+      seenJewelry.add(key);
+      if (fee.deletedAt !== null) continue;
       feeByWeight.set(key, {
         good: dec(fee.feeGoodShape.toFixed()),
         damaged: dec(fee.feeDamagedShape.toFixed()),
@@ -102,9 +109,12 @@ export class ExchangeService {
     }
 
     const barFeeByWeight = new Map<string, Decimal>();
+    const seenBar = new Set<string>();
     for (const fee of barFees) {
       const key = fee.weightG.toFixed();
-      if (barFeeByWeight.has(key)) continue;
+      if (seenBar.has(key)) continue;
+      seenBar.add(key);
+      if (fee.deletedAt !== null) continue;
       barFeeByWeight.set(key, dec(fee.barToJewelry.toFixed()));
     }
 
