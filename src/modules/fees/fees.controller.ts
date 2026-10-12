@@ -1,4 +1,14 @@
-import { Body, Controller, DefaultValuePipe, Get, ParseIntPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { FeesService } from './fees.service';
 import {
   UpdateDeductionDto,
@@ -22,10 +32,21 @@ export class FeesController {
     return this.fees.currentJewelryFees();
   }
 
+  @Get('conversion/jewelry/history')
+  jewelryFeeHistory(@Query('limit', new DefaultValuePipe(60), ParseIntPipe) limit: number) {
+    return this.fees.jewelryFeeHistory(limit);
+  }
+
   @Roles('ADMIN', 'MANAGER')
   @Post('conversion/jewelry')
   upsertJewelryFee(@Body() dto: UpsertJewelryFeeDto, @CurrentUser() user: AuthenticatedUser) {
     return this.fees.upsertJewelryFee(dto, user.id);
+  }
+
+  @Roles('ADMIN', 'MANAGER')
+  @Delete('conversion/jewelry/:tierCode')
+  deleteJewelryFee(@Param('tierCode') tierCode: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.fees.deleteJewelryFee(tierCode, user.id);
   }
 
   @Get('conversion/bar')
@@ -33,10 +54,23 @@ export class FeesController {
     return this.fees.currentBarFees();
   }
 
+  @Get('conversion/bar/history')
+  barFeeHistory(@Query('limit', new DefaultValuePipe(60), ParseIntPipe) limit: number) {
+    return this.fees.barFeeHistory(limit);
+  }
+
   @Roles('ADMIN', 'MANAGER')
   @Post('conversion/bar')
   upsertBarFee(@Body() dto: UpsertBarFeeDto, @CurrentUser() user: AuthenticatedUser) {
     return this.fees.upsertBarFee(dto, user.id);
+  }
+
+  // The weight is the key, and it carries a decimal point, so it travels as a
+  // query parameter rather than a path segment Nest would try to parse.
+  @Roles('ADMIN', 'MANAGER')
+  @Delete('conversion/bar')
+  deleteBarFee(@Query('weightG') weightG: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.fees.deleteBarFee(weightG, user.id);
   }
 
   // ຄ່າອ່ອນ (§3.4)

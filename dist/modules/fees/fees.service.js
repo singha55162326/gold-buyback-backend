@@ -36,6 +36,19 @@ let FeesService = class FeesService {
         }
         return new client_1.Prisma.Decimal(value.toFixed());
     }
+    /**
+     * Attach the editor's display name to history rows. One query for the whole
+     * page rather than an include per row, which would fan out to a join on
+     * every version of every weight.
+     */
+    async withEditorNames(rows) {
+        const users = await this.prisma.user.findMany({
+            where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
+            select: { id: true, fullName: true },
+        });
+        const nameById = new Map(users.map((u) => [u.id, u.fullName]));
+        return rows.map((r) => ({ ...r, updatedBy: nameById.get(r.createdById) ?? '—' }));
+    }
     /** Keep only the newest row per key from an append-only table. */
     newestPerKey(rows, key) {
         const seen = new Set();
@@ -55,7 +68,53 @@ let FeesService = class FeesService {
             orderBy: { effectiveAt: 'desc' },
             include: { tier: true },
         });
-        return this.newestPerKey(rows, (r) => r.tierCode).sort((a, b) => a.tier.sortOrder - b.tier.sortOrder);
+        // Retiring a tier appends a tombstone rather than deleting rows, so the
+        // newest version has to be inspected before it counts as current.
+        return this.newestPerKey(rows, (r) => r.tierCode)
+            .filter((r) => r.deletedAt === null)
+            .sort((a, b) => a.tier.sortOrder - b.tier.sortOrder);
+    }
+    async jewelryFeeHistory(limit = 60) {
+        const rows = await this.prisma.jewelryConversionFee.findMany({
+            orderBy: { effectiveAt: 'desc' },
+            include: { tier: true },
+            take: Math.min(limit, 500),
+        });
+        return this.withEditorNames(rows);
+    }
+    /**
+     * Retire a tier's fee. The exchange engine falls back to 0 for a weight it
+     * cannot find a fee for, so this silently zeroes ຄ່າຫຍຸບ for that tier —
+     * which is why the UI asks for confirmation rather than offering a plain
+     * delete button.
+     */
+    async deleteJewelryFee(tierCode, actorId) {
+        const rows = await this.prisma.jewelryConversionFee.findMany({
+            where: { tierCode },
+            orderBy: { effectiveAt: 'desc' },
+            include: { tier: true },
+            take: 1,
+        });
+        const newest = rows[0];
+        if (!newest || newest.deletedAt !== null) {
+            throw new common_1.NotFoundException('ບໍ່ພົບຄ່າປ່ຽນຂອງນ້ຳໜັກນີ້');
+        }
+        const created = await this.prisma.jewelryConversionFee.create({
+            data: {
+                tierCode: newest.tierCode,
+                weightG: newest.weightG,
+                feeGoodShape: newest.feeGoodShape,
+                feeDamagedShape: newest.feeDamagedShape,
+                createdById: actorId,
+                deletedAt: new Date(),
+            },
+        });
+        await this.audit.record({
+            actorId, action: 'DELETE', entity: 'JewelryConversionFee', entityId: created.id,
+            before: newest, after: created,
+            summary: `ລຶບຄ່າປ່ຽນຮູບປະພັນ ${newest.tier.labelLo}`,
+        });
+        return created;
     }
     async upsertJewelryFee(dto, actorId) {
         const tier = await this.prisma.weightTier.findUnique({ where: { code: dto.tierCode } });
@@ -79,7 +138,44 @@ let FeesService = class FeesService {
     // --- §3.4 ຄ່າປ່ຽນຄຳແທ່ງ ---------------------------------------------------
     async currentBarFees() {
         const rows = await this.prisma.barConversionFee.findMany({ orderBy: { effectiveAt: 'desc' } });
-        return this.newestPerKey(rows, (r) => r.weightG.toFixed()).sort((a, b) => Number(b.weightG) - Number(a.weightG));
+        return this.newestPerKey(rows, (r) => r.weightG.toFixed())
+            .filter((r) => r.deletedAt === null)
+            .sort((a, b) => Number(b.weightG) - Number(a.weightG));
+    }
+    async barFeeHistory(limit = 60) {
+        const rows = await this.prisma.barConversionFee.findMany({
+            orderBy: { effectiveAt: 'desc' },
+            take: Math.min(limit, 500),
+        });
+        return this.withEditorNames(rows);
+    }
+    /** Retire a bar weight. See deleteJewelryFee — same tombstone, same caveat. */
+    async deleteBarFee(weightG, actorId) {
+        const weight = this.toDecimal(weightG, 'ນ້ຳໜັກ', false);
+        const rows = await this.prisma.barConversionFee.findMany({
+            where: { weightG: weight },
+            orderBy: { effectiveAt: 'desc' },
+            take: 1,
+        });
+        const newest = rows[0];
+        if (!newest || newest.deletedAt !== null) {
+            throw new common_1.NotFoundException('ບໍ່ພົບຄ່າປ່ຽນຂອງນ້ຳໜັກນີ້');
+        }
+        const created = await this.prisma.barConversionFee.create({
+            data: {
+                weightG: newest.weightG,
+                barToJewelry: newest.barToJewelry,
+                barToBar: newest.barToBar,
+                createdById: actorId,
+                deletedAt: new Date(),
+            },
+        });
+        await this.audit.record({
+            actorId, action: 'DELETE', entity: 'BarConversionFee', entityId: created.id,
+            before: newest, after: created,
+            summary: `ລຶບຄ່າປ່ຽນຄຳແທ່ງ ${newest.weightG.toFixed()} g`,
+        });
+        return created;
     }
     async upsertBarFee(dto, actorId) {
         const created = await this.prisma.barConversionFee.create({

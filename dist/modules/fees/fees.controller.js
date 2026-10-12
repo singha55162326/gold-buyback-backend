@@ -29,14 +29,28 @@ let FeesController = class FeesController {
     jewelryFees() {
         return this.fees.currentJewelryFees();
     }
+    jewelryFeeHistory(limit) {
+        return this.fees.jewelryFeeHistory(limit);
+    }
     upsertJewelryFee(dto, user) {
         return this.fees.upsertJewelryFee(dto, user.id);
+    }
+    deleteJewelryFee(tierCode, user) {
+        return this.fees.deleteJewelryFee(tierCode, user.id);
     }
     barFees() {
         return this.fees.currentBarFees();
     }
+    barFeeHistory(limit) {
+        return this.fees.barFeeHistory(limit);
+    }
     upsertBarFee(dto, user) {
         return this.fees.upsertBarFee(dto, user.id);
+    }
+    // The weight is the key, and it carries a decimal point, so it travels as a
+    // query parameter rather than a path segment Nest would try to parse.
+    deleteBarFee(weightG, user) {
+        return this.fees.deleteBarFee(weightG, user.id);
     }
     // ຄ່າອ່ອນ (§3.4)
     softGoldFee() {
@@ -65,6 +79,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FeesController.prototype, "jewelryFees", null);
 __decorate([
+    (0, common_1.Get)('conversion/jewelry/history'),
+    openapi.ApiResponse({ status: 200, type: [Object] }),
+    __param(0, (0, common_1.Query)('limit', new common_1.DefaultValuePipe(60), common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], FeesController.prototype, "jewelryFeeHistory", null);
+__decorate([
     (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
     (0, common_1.Post)('conversion/jewelry'),
     openapi.ApiResponse({ status: 201 }),
@@ -75,12 +97,30 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FeesController.prototype, "upsertJewelryFee", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Delete)('conversion/jewelry/:tierCode'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('tierCode')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], FeesController.prototype, "deleteJewelryFee", null);
+__decorate([
     (0, common_1.Get)('conversion/bar'),
     openapi.ApiResponse({ status: 200 }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], FeesController.prototype, "barFees", null);
+__decorate([
+    (0, common_1.Get)('conversion/bar/history'),
+    openapi.ApiResponse({ status: 200, type: [Object] }),
+    __param(0, (0, common_1.Query)('limit', new common_1.DefaultValuePipe(60), common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", void 0)
+], FeesController.prototype, "barFeeHistory", null);
 __decorate([
     (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
     (0, common_1.Post)('conversion/bar'),
@@ -91,6 +131,16 @@ __decorate([
     __metadata("design:paramtypes", [fee_dto_1.UpsertBarFeeDto, Object]),
     __metadata("design:returntype", void 0)
 ], FeesController.prototype, "upsertBarFee", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Delete)('conversion/bar'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)('weightG')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], FeesController.prototype, "deleteBarFee", null);
 __decorate([
     (0, common_1.Get)('soft-gold'),
     openapi.ApiResponse({ status: 200 }),
