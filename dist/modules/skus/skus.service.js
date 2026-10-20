@@ -42,9 +42,21 @@ let SkusService = SkusService_1 = class SkusService {
     static formatBaht(baht) {
         return (0, domain_1.trimTrailingZeros)(baht.toDecimalPlaces(2).toFixed());
     }
+    /**
+     * ນ້ຳໜັກກຣາມ ຫຼັງຈຸດ 3 ຕົວ — always three places, zeros included.
+     *
+     * Trailing zeros are kept on purpose here, unlike ບາດ: a column of SKU
+     * weights is read down, and 1.870 beside 1.875 lines up where "1.87" does
+     * not. Three places is also where the ຄ່າອ່ອນ steps live (§5.2), so the
+     * displayed weight and the weight the fee is computed from agree.
+     */
+    static formatGrams(weightG) {
+        return weightG.toDecimalPlaces(3).toFixed(3);
+    }
     /** The derived name — exported so the web client can preview it live. */
     static buildFullSkuName(nameLo, weightG) {
-        return `${nameLo.trim()} ${SkusService_1.formatBaht(SkusService_1.bahtWeight(weightG))} ບາດ`;
+        const baht = SkusService_1.formatBaht(SkusService_1.bahtWeight(weightG));
+        return `${nameLo.trim()} ${baht} ບາດ (${SkusService_1.formatGrams(weightG)} g)`;
     }
     parseWeight(raw) {
         const weight = (0, domain_1.dec)(raw);
@@ -59,6 +71,7 @@ let SkusService = SkusService_1 = class SkusService {
         const baht = SkusService_1.bahtWeight(weight);
         return {
             weightG: weight.toFixed(),
+            weightDisplay: SkusService_1.formatGrams(weight),
             bahtWeight: baht.toFixed(),
             bahtWeightDisplay: SkusService_1.formatBaht(baht),
             fullSkuName: SkusService_1.buildFullSkuName(nameLo, weight),

@@ -17,6 +17,7 @@ const prisma_service_1 = require("../../prisma/prisma.service");
 const audit_service_1 = require("../../common/services/audit.service");
 const approval_service_1 = require("../../common/services/approval.service");
 const business_day_service_1 = require("../../common/services/business-day.service");
+const history_range_service_1 = require("../../common/services/history-range.service");
 const notifications_service_1 = require("../notifications/notifications.service");
 const D = (value) => new client_1.Prisma.Decimal(value.toFixed());
 const CURRENCIES = ['LAK', 'THB', 'USD'];
@@ -52,12 +53,14 @@ let CashService = class CashService {
     approval;
     businessDay;
     notifications;
-    constructor(prisma, audit, approval, businessDay, notifications) {
+    range;
+    constructor(prisma, audit, approval, businessDay, notifications, range) {
         this.prisma = prisma;
         this.audit = audit;
         this.approval = approval;
         this.businessDay = businessDay;
         this.notifications = notifications;
+        this.range = range;
     }
     /* ---------------------------------------------------------------- *
      * §4.1 / §6 — ເບີກເງິນ (+) / ມອບເງິນ (-)
@@ -236,11 +239,17 @@ let CashService = class CashService {
         return created;
     }
     /** ຍອດເງິນສົດຄົງເຫຼືອ per currency, for today (TOR §3.7). */
-    async cashBalances() {
-        const day = await this.businessDay.current();
+    /**
+     * ຍອດເງິນສົດຂອງມື້ການຄ້າ. `dayId` ວ່າງ = ມື້ນີ້.
+     *
+     * ຮັບເປັນ id ບໍ່ແມ່ນວັນທີ ເພື່ອໃຫ້ຜູ້ເອີ້ນແກ້ໄດ້ວ່າ "ມື້ນັ້ນບໍ່ມີຢູ່" ແນວໃດ
+     * — ຍອດເງິນສູນ ກັບ ມື້ທີ່ບໍ່ເຄີຍເປີດ ບໍ່ແມ່ນເລື່ອງດຽວກັນ.
+     */
+    async cashBalances(dayId) {
+        const businessDayId = dayId ?? (await this.businessDay.current()).id;
         const rows = await this.prisma.cashTransaction.groupBy({
             by: ['currency', 'type'],
-            where: { businessDayId: day.id, deletedAt: null },
+            where: { businessDayId, deletedAt: null },
             _sum: { amount: true },
         });
         return CURRENCIES.map((currency) => {
@@ -263,12 +272,22 @@ let CashService = class CashService {
             };
         });
     }
-    cashHistory(limit = 200) {
-        return this.prisma.cashTransaction.findMany({
-            where: { deletedAt: null },
-            orderBy: { createdAt: 'desc' },
-            take: Math.min(limit, 500),
-        });
+    async cashHistory(query, user) {
+        const range = this.range.resolve(query, user);
+        const where = {
+            deletedAt: null,
+            createdAt: history_range_service_1.HistoryRangeService.window(range),
+        };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.cashTransaction.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.cashTransaction.count({ where }),
+        ]);
+        return this.range.page(rows, total, range);
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — Module Bank
@@ -310,16 +329,17 @@ let CashService = class CashService {
      * A non-zero variance is the shop's signal that the ledger and the bank
      * statement have diverged, so it is surfaced rather than reconciled away.
      */
-    async bankBalances() {
-        const day = await this.businessDay.current();
+    /** ຍອດທະນາຄານຂອງມື້ການຄ້າ. `dayId` ວ່າງ = ມື້ນີ້. */
+    async bankBalances(dayId) {
+        const businessDayId = dayId ?? (await this.businessDay.current()).id;
         const [accounts, rows, netBalances] = await Promise.all([
             this.prisma.bankAccount.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
             this.prisma.bankTransaction.groupBy({
                 by: ['bankAccountId', 'currency', 'type'],
-                where: { businessDayId: day.id, deletedAt: null },
+                where: { businessDayId, deletedAt: null },
                 _sum: { amount: true },
             }),
-            this.prisma.bankNetBalance.findMany({ where: { businessDayId: day.id } }),
+            this.prisma.bankNetBalance.findMany({ where: { businessDayId } }),
         ]);
         const netByKey = new Map(netBalances.map((n) => [`${n.bankAccountId}:${n.currency}`, (0, domain_1.dec)(n.netAmount.toFixed())]));
         return accounts.flatMap((account) => CURRENCIES.map((currency) => {
@@ -380,13 +400,23 @@ let CashService = class CashService {
         });
         return saved;
     }
-    bankHistory(limit = 200) {
-        return this.prisma.bankTransaction.findMany({
-            where: { deletedAt: null },
-            include: { bankAccount: true },
-            orderBy: { createdAt: 'desc' },
-            take: Math.min(limit, 500),
-        });
+    async bankHistory(query, user) {
+        const range = this.range.resolve(query, user);
+        const where = {
+            deletedAt: null,
+            createdAt: history_range_service_1.HistoryRangeService.window(range),
+        };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.bankTransaction.findMany({
+                where,
+                include: { bankAccount: true },
+                orderBy: { createdAt: 'desc' },
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.bankTransaction.count({ where }),
+        ]);
+        return this.range.page(rows, total, range);
     }
 };
 exports.CashService = CashService;
@@ -396,6 +426,7 @@ exports.CashService = CashService = __decorate([
         audit_service_1.AuditService,
         approval_service_1.ApprovalService,
         business_day_service_1.BusinessDayService,
-        notifications_service_1.NotificationsService])
+        notifications_service_1.NotificationsService,
+        history_range_service_1.HistoryRangeService])
 ], CashService);
 //# sourceMappingURL=cash.service.js.map

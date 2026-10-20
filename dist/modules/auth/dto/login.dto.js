@@ -12,22 +12,34 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RefreshDto = exports.LoginDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
+/**
+ * Sign-in carries no format rules beyond "not empty".
+ *
+ * A minimum length here is a rule about how accounts are CREATED, and
+ * enforcing it at sign-in locks out any account that predates the rule or
+ * was made another way. That is not hypothetical: the seeded Financial
+ * Controller is `fc`, two characters, and a MinLength(3) here meant that
+ * account could never sign in at all — the UI reported "ຊື່ຜູ້ໃຊ້ສັ້ນເກີນໄປ"
+ * for a username the system had issued itself.
+ *
+ * The length rule still applies where it belongs, on CreateUserDto.
+ */
 class LoginDto {
     username;
     password;
     static _OPENAPI_METADATA_FACTORY() {
-        return { username: { required: true, type: () => String, minLength: 3 }, password: { required: true, type: () => String, minLength: 6 } };
+        return { username: { required: true, type: () => String }, password: { required: true, type: () => String } };
     }
 }
 exports.LoginDto = LoginDto;
 __decorate([
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(3, { message: 'ຊື່ຜູ້ໃຊ້ສັ້ນເກີນໄປ' }),
+    (0, class_validator_1.IsNotEmpty)({ message: 'ກະລຸນາປ້ອນຊື່ຜູ້ໃຊ້' }),
     __metadata("design:type", String)
 ], LoginDto.prototype, "username", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(6, { message: 'ລະຫັດຜ່ານສັ້ນເກີນໄປ' }),
+    (0, class_validator_1.IsNotEmpty)({ message: 'ກະລຸນາປ້ອນລະຫັດຜ່ານ' }),
     __metadata("design:type", String)
 ], LoginDto.prototype, "password", void 0);
 class RefreshDto {

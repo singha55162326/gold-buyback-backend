@@ -11,6 +11,9 @@ import {
   type Decimal,
 } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
+import { HistoryRangeService } from '../../common/services/history-range.service';
+import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
+import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { StockLedgerService } from '../../common/services/stock-ledger.service';
 import { AdvanceService } from '../../common/services/advance.service';
@@ -36,6 +39,7 @@ export class LedgerService {
     private readonly cash: CashService,
     private readonly advance: AdvanceService,
     private readonly pricingContext: PricingContextService,
+    private readonly range: HistoryRangeService
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -61,14 +65,15 @@ export class LedgerService {
    * ---------------------------------------------------------------- */
 
   /** Net AP and AR per currency for today, including the opening carried in. */
-  async cashApAr() {
-    const day = await this.businessDay.current();
+  /** AP/AR ເງິນສົດ ຂອງມື້ການຄ້າ. ບໍ່ສົ່ງມື້ມາ = ມື້ນີ້. */
+  async cashApAr(day?: { id: string; date: Date }) {
+    const target = day ?? (await this.businessDay.current());
 
     const [openings, movements] = await Promise.all([
-      this.prisma.cashApArOpening.findMany({ where: { businessDayId: day.id } }),
+      this.prisma.cashApArOpening.findMany({ where: { businessDayId: target.id } }),
       this.prisma.cashApArLedger.groupBy({
         by: ['side', 'currency'],
-        where: { businessDate: BusinessDayService.toDateOnly(), deletedAt: null },
+        where: { businessDate: target.date, deletedAt: null },
         _sum: { amountIn: true, amountOut: true },
       }),
     ]);
@@ -97,12 +102,23 @@ export class LedgerService {
     );
   }
 
-  cashApArHistory(limit = 200) {
-    return this.prisma.cashApArLedger.findMany({
-      where: { deletedAt: null },
-      orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
-      take: Math.min(limit, 500),
-    });
+  async cashApArHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      businessDate: HistoryRangeService.dayWindow(range),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.cashApArLedger.findMany({
+        where,
+        include: { partner: true, category: true },
+        orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.cashApArLedger.count({ where }),
+    ]);
+    return this.range.page(rows, total, range);
   }
 
   /* ---------------------------------------------------------------- *
@@ -205,13 +221,23 @@ export class LedgerService {
     );
   }
 
-  goldApArHistory(limit = 200) {
-    return this.prisma.goldApArLedger.findMany({
-      where: { deletedAt: null },
-      include: { partner: true },
-      orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
-      take: Math.min(limit, 500),
-    });
+  async goldApArHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      businessDate: HistoryRangeService.dayWindow(range),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.goldApArLedger.findMany({
+        where,
+        include: { partner: true },
+        orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.goldApArLedger.count({ where }),
+    ]);
+    return this.range.page(rows, total, range);
   }
 
   /* ---------------------------------------------------------------- *
@@ -222,15 +248,31 @@ export class LedgerService {
    * COH Cash = Cash + BCEL + LDB + Other Bank − AP + AR, per currency.
    * COH Gold = Gold NEW(g) + Gold OLD(g) − AP + AR.
    */
-  async coh() {
+  /**
+   * COH ຢູ່ວັນທີໃດໜຶ່ງ (TOR §3.7). ບໍ່ສົ່ງວັນທີມາ = ມື້ນີ້.
+   *
+   * COH ເປັນ "ຍອດຢູ່ເວລາໜຶ່ງ" ບໍ່ແມ່ນປະຫວັດ, ສະນັ້ນ filter ຈຶ່ງເປັນວັນທີດຽວ
+   * ບໍ່ແມ່ນຊ່ວງ. ເງິນສົດ / ທະນາຄານ / AP-AR ອ່ານຕາມມື້ການຄ້ານັ້ນ, ສ່ວນ ຄຳ ແລະ
+   * Advance ເປັນຍອດສະສົມ ຈຶ່ງອ່ານເຖິງວັນທີນັ້ນ.
+   *
+   * ວັນທີທີ່ບໍ່ເຄີຍເປີດເປັນມື້ການຄ້າ ຈະໄດ້ຍອດເງິນສົດ/ທະນາຄານ = 0 ເຊິ່ງຖືກຕ້ອງ:
+   * ມື້ນັ້ນບໍ່ມີການເຄື່ອນໄຫວ.
+   */
+  async coh(asOfDate?: string) {
+    const day = asOfDate
+      ? await this.prisma.businessDay.findUnique({ where: { date: new Date(`${asOfDate}T00:00:00.000Z`) } })
+      : await this.businessDay.current();
+    const asOf = asOfDate ? new Date(`${asOfDate}T00:00:00.000Z`) : undefined;
+
     const [cashBalances, bankBalances, apAr, goldSummary, wacPosition, advanceNet] =
       await Promise.all([
-        this.cash.cashBalances(),
-        this.cash.bankBalances(),
-        this.cashApAr(),
+        this.cash.cashBalances(day?.id ?? '—'),
+        this.cash.bankBalances(day?.id ?? '—'),
+        // ມື້ທີ່ບໍ່ເຄີຍເປີດ: ສົ່ງ id ທີ່ບໍ່ກົງກັບແຖວໃດ ແລ້ວໄດ້ຍອດ 0 ຜ່ານເສັ້ນທາງດຽວກັນ.
+        this.cashApAr(day ?? { id: '—', date: asOf! }),
         this.goldApArSummary(),
-        this.stockLedger.currentWac(),
-        this.advance.netByCurrency(),
+        this.stockLedger.currentWac(this.prisma, asOf),
+        this.advance.netByCurrency(this.prisma, asOf),
       ]);
 
     const cashByCurrency = new Map(cashBalances.map((b) => [b.currency, dec(b.balance)]));
@@ -341,5 +383,66 @@ export class LedgerService {
       weightG: wealth.weightG.toFixed(),
       baht: wealth.baht.toFixed(),
     };
+  }
+
+  /**
+   * Wealth ລາຍວັນ — 30 ມື້ການຄ້າລ່າສຸດ (TOR §3.7 ຕາມທີ່ລູກຄ້າແຈ້ງ).
+   *
+   *   ຍອດຄຳຍົກມາ (g) = ຍອດຕົ້ນມື້ ຂອງ ສາງຄຳເກົ່າ + ສາງຄຳໃໝ່
+   *   ຍອດຄຳສຸດທິ (g) = ຍອດທ້າຍມື້ ຂອງ ສອງສາງ
+   *   ສ່ວນຕ່າງ (g)    = ຍົກມາ − ສຸດທິ
+   *
+   * ອ່ານຈາກຕາຕະລາງຍອດລາຍວັນທີ່ມີຢູ່ແລ້ວ (ຕໍ່ມື້ການຄ້າ ຕໍ່ປະເພດຄຳ / ຕໍ່ SKU)
+   * ບໍ່ແມ່ນໄລ່ຄືນຈາກ ledger ທັງໝົດ — ຕົວເລກຈຶ່ງກົງກັບທີ່ໜ້າສາງສະແດງ.
+   * ສາງຄຳໃໝ່ ເກັບຍອດຕົ້ນມື້ເປັນຈຳນວນ, ສະນັ້ນຄູນດ້ວຍນ້ຳໜັກ SKU ກ່ອນ.
+   */
+  async wealthHistory(limit = 30) {
+    const days = await this.prisma.businessDay.findMany({
+      orderBy: { date: 'desc' },
+      take: Math.min(limit, 180),
+      select: { id: true, date: true },
+    });
+    if (days.length === 0) return [];
+
+    const dayIds = days.map((d) => d.id);
+    const [oldRows, newRows] = await Promise.all([
+      this.prisma.stockOldTypeBalance.findMany({
+        where: { businessDayId: { in: dayIds } },
+        select: { businessDayId: true, openingWeightG: true, closingWeightG: true },
+      }),
+      this.prisma.stockNewSkuBalance.findMany({
+        where: { businessDayId: { in: dayIds } },
+        select: {
+          businessDayId: true, openingQty: true, totalWeightG: true,
+          goldSku: { select: { weightG: true } },
+        },
+      }),
+    ]);
+
+    const opening = new Map<string, Decimal>();
+    const closing = new Map<string, Decimal>();
+    const add = (map: Map<string, Decimal>, key: string, value: Decimal) =>
+      map.set(key, (map.get(key) ?? dec(0)).plus(value));
+
+    for (const row of oldRows) {
+      add(opening, row.businessDayId, dec(row.openingWeightG.toFixed()));
+      add(closing, row.businessDayId, dec(row.closingWeightG.toFixed()));
+    }
+    for (const row of newRows) {
+      add(opening, row.businessDayId, dec(row.goldSku.weightG.toFixed()).mul(row.openingQty));
+      add(closing, row.businessDayId, dec(row.totalWeightG.toFixed()));
+    }
+
+    return days.map((day) => {
+      const broughtForwardG = opening.get(day.id) ?? dec(0);
+      const netG = closing.get(day.id) ?? dec(0);
+      return {
+        businessDayId: day.id,
+        date: day.date,
+        broughtForwardG: broughtForwardG.toFixed(),
+        netG: netG.toFixed(),
+        differenceG: broughtForwardG.minus(netG).toFixed(),
+      };
+    });
   }
 }

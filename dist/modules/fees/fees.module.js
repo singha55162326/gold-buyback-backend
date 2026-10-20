@@ -10,11 +10,15 @@ exports.FeesModule = void 0;
 const common_1 = require("@nestjs/common");
 const fees_controller_1 = require("./fees.controller");
 const fees_service_1 = require("./fees.service");
+const pricing_module_1 = require("../pricing/pricing.module");
 let FeesModule = class FeesModule {
 };
 exports.FeesModule = FeesModule;
 exports.FeesModule = FeesModule = __decorate([
     (0, common_1.Module)({
+        // Editing a deduction re-prices the board, so the pricing service
+        // comes along.
+        imports: [pricing_module_1.PricingModule],
         controllers: [fees_controller_1.FeesController],
         providers: [fees_service_1.FeesService],
         exports: [fees_service_1.FeesService],

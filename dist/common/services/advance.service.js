@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const business_day_service_1 = require("./business-day.service");
+const history_range_service_1 = require("./history-range.service");
 const D = (value) => new client_1.Prisma.Decimal(value.toFixed());
 const toDec = (value) => (0, domain_1.dec)(value?.toFixed() ?? 0);
 /**
@@ -31,8 +32,10 @@ const toDec = (value) => (0, domain_1.dec)(value?.toFixed() ?? 0);
  */
 let AdvanceService = class AdvanceService {
     prisma;
-    constructor(prisma) {
+    range;
+    constructor(prisma, range) {
         this.prisma = prisma;
+        this.range = range;
     }
     async post(tx, input) {
         if (input.amount.lte(0))
@@ -67,10 +70,10 @@ let AdvanceService = class AdvanceService {
         });
     }
     /** ຍອດ Advance ສຸດທິ per currency — what COH subtracts. */
-    async netByCurrency(client = this.prisma) {
+    async netByCurrency(client = this.prisma, asOf) {
         const rows = await client.advanceLedger.groupBy({
             by: ['currency'],
-            where: { deletedAt: null },
+            where: { deletedAt: null, ...(asOf ? { businessDate: { lte: asOf } } : {}) },
             _sum: { amountIn: true, amountOut: true },
         });
         const result = { LAK: (0, domain_1.dec)(0), THB: (0, domain_1.dec)(0), USD: (0, domain_1.dec)(0) };
@@ -95,23 +98,53 @@ let AdvanceService = class AdvanceService {
             billCount: openOrders,
         };
     }
-    /** History for the Advance module, keyed to the order it belongs to. */
-    history(limit = 200) {
-        return this.prisma.advanceLedger.findMany({
-            where: { deletedAt: null },
-            include: {
-                // The View detail in §7 needs the full order context.
-                order: { include: { customer: true, goldItem: true, supplier: true } },
-                bankAccount: true,
-            },
-            orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
-            take: Math.min(limit, 500),
-        });
+    /**
+     * History for the Advance module, keyed to the order it belongs to.
+     *
+     * ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້ ແລະ ກວ້າງອອກໄດ້ຕາມສິດ. ກອງຕາມ businessDate (ເປັນ
+     * ຖັນວັນທີລ້ວນ) ບໍ່ແມ່ນ createdAt, ເພາະລາຍການຂອງມື້ການຄ້າໜຶ່ງອາດຖືກ
+     * ບັນທຶກຫຼັງທ່ຽງຄືນ.
+     */
+    async history(query, user) {
+        const range = this.range.resolve(query, user);
+        const where = {
+            deletedAt: null,
+            businessDate: history_range_service_1.HistoryRangeService.dayWindow(range),
+        };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.advanceLedger.findMany({
+                where,
+                include: {
+                    // The View detail in §7 needs the full order context.
+                    order: { include: { customer: true, goldItem: true, supplier: true } },
+                    bankAccount: true,
+                },
+                orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.advanceLedger.count({ where }),
+        ]);
+        return this.range.page(rows.map((row) => {
+            /*
+             * ຍອດເງິນສຸດທິ = ຍອດເງິນທີ່ໄດ້ຮັບ − ຍອດຄົງເຫຼືອຮັບ − ຍອດເງິນຕັດຊຳລະ
+             * ຕາມທີ່ລູກຄ້າກຳນົດ. ຄຳນວນຢູ່ server ເພື່ອບໍ່ໃຫ້ສອງໜ້າຈໍຄຳນວນຄົນລະແບບ.
+             */
+            const received = toDec(row.amountIn);
+            const outstanding = toDec(row.order.balanceAmount);
+            const settled = toDec(row.amountOut);
+            return {
+                ...row,
+                outstandingAmount: outstanding.toFixed(),
+                netAmount: received.minus(outstanding).minus(settled).toFixed(),
+            };
+        }), total, range);
     }
 };
 exports.AdvanceService = AdvanceService;
 exports.AdvanceService = AdvanceService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        history_range_service_1.HistoryRangeService])
 ], AdvanceService);
 //# sourceMappingURL=advance.service.js.map

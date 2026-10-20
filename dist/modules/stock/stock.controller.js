@@ -22,6 +22,7 @@ const roles_decorator_1 = require("../../common/decorators/roles.decorator");
 const requires_shift_decorator_1 = require("../../common/decorators/requires-shift.decorator");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const swagger_1 = require("@nestjs/swagger");
+const history_range_dto_1 = require("../../common/dto/history-range.dto");
 let StockController = class StockController {
     stock;
     prisma;
@@ -33,14 +34,14 @@ let StockController = class StockController {
     listMovements(scope, status) {
         return this.stock.listMovements(scope, status);
     }
-    newHistory() {
-        return this.stock.newHistory();
+    newHistory(query, user) {
+        return this.stock.newHistory(query, user);
     }
     newBalances() {
         return this.stock.newBalances();
     }
-    oldHistory() {
-        return this.stock.oldHistory();
+    oldHistory(query, user) {
+        return this.stock.oldHistory(query, user);
     }
     oldBalances() {
         return this.stock.oldBalances();
@@ -60,8 +61,9 @@ let StockController = class StockController {
         return this.stock.transfer(dto, user);
     }
     /* ---- §7.3 FACTORY tracking ---- */
-    listFactoryTracking() {
-        return this.stock.listFactoryTracking();
+    // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ກວ້າງອອກໄດ້ຕາມສິດ (ບັງຄັບຢູ່ service).
+    listFactoryTracking(query, user) {
+        return this.stock.listFactoryTracking(query, user);
     }
     /**
      * ອັບເດດ ນໍ້າໜັກg FACTORY ປະເມີນ.
@@ -83,8 +85,13 @@ let StockController = class StockController {
         return this.stock.oldGoldSummary();
     }
     /* ---- §4.2 ມອບຄຳລະຫວ່າງມື້ ---- */
-    listHandovers(status) {
-        return this.stock.listHandovers(status);
+    // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ສິດກວ້າງວັນທີບັງຄັບຢູ່ HistoryRangeService ບໍ່ແມ່ນ FE.
+    listHandovers(query, user, status) {
+        return this.stock.listHandovers(status, query, user);
+    }
+    /** ລາຍການຄຳເກົ່າ (ຄຳຕົ້ມ) ທີ່ຍັງບໍ່ໄດ້ມອບ — ໃຫ້ຟອມເລືອກເປັນແຖວ. */
+    pendingOldGoldItems(goldTypeId) {
+        return this.stock.pendingOldGoldItems(goldTypeId);
     }
     createHandover(dto, user, req) {
         const shiftId = req.shift?.id;
@@ -110,9 +117,11 @@ __decorate([
 ], StockController.prototype, "listMovements", null);
 __decorate([
     (0, common_1.Get)('new/history'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
     __metadata("design:returntype", void 0)
 ], StockController.prototype, "newHistory", null);
 __decorate([
@@ -124,9 +133,11 @@ __decorate([
 ], StockController.prototype, "newBalances", null);
 __decorate([
     (0, common_1.Get)('old/history'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
     __metadata("design:returntype", void 0)
 ], StockController.prototype, "oldHistory", null);
 __decorate([
@@ -180,9 +191,11 @@ __decorate([
 ], StockController.prototype, "transfer", null);
 __decorate([
     (0, common_1.Get)('factory'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
     __metadata("design:returntype", void 0)
 ], StockController.prototype, "listFactoryTracking", null);
 __decorate([
@@ -207,17 +220,29 @@ __decorate([
 __decorate([
     openapi.ApiQuery({ name: "status", required: false }),
     (0, common_1.Get)('handovers'),
-    openapi.ApiResponse({ status: 200, type: Object }),
-    __param(0, (0, common_1.Query)('status')),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('status')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
+    __metadata("design:returntype", void 0)
+], StockController.prototype, "listHandovers", null);
+__decorate([
+    openapi.ApiOperation({ summary: "\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99\u0E84\u0EB3\u0EC0\u0E81\u0EBB\u0EC8\u0EB2 (\u0E84\u0EB3\u0E95\u0EBB\u0EC9\u0EA1) \u0E97\u0EB5\u0EC8\u0E8D\u0EB1\u0E87\u0E9A\u0ECD\u0EC8\u0EC4\u0E94\u0EC9\u0EA1\u0EAD\u0E9A \u2014 \u0EC3\u0EAB\u0EC9\u0E9F\u0EAD\u0EA1\u0EC0\u0EA5\u0EB7\u0EAD\u0E81\u0EC0\u0E9B\u0EB1\u0E99\u0EC1\u0E96\u0EA7." }),
+    openapi.ApiQuery({ name: "goldTypeId", required: false }),
+    (0, common_1.Get)('handovers/pending-items'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)('goldTypeId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
-], StockController.prototype, "listHandovers", null);
+], StockController.prototype, "pendingOldGoldItems", null);
 __decorate([
     (0, roles_decorator_1.Roles)('PAYMENT', 'ADMIN', 'MANAGER'),
     (0, requires_shift_decorator_1.RequiresOpenShift)(),
     (0, common_1.Post)('handovers'),
-    openapi.ApiResponse({ status: 201 }),
+    openapi.ApiResponse({ status: 201, type: Object }),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __param(2, (0, common_1.Req)()),

@@ -21,6 +21,7 @@ const roles_decorator_1 = require("../../common/decorators/roles.decorator");
 const requires_shift_decorator_1 = require("../../common/decorators/requires-shift.decorator");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const swagger_1 = require("@nestjs/swagger");
+const history_range_dto_1 = require("../../common/dto/history-range.dto");
 let CashController = class CashController {
     cash;
     constructor(cash) {
@@ -47,8 +48,8 @@ let CashController = class CashController {
     cashBalances() {
         return this.cash.cashBalances();
     }
-    cashHistory() {
-        return this.cash.cashHistory();
+    cashHistory(query, user) {
+        return this.cash.cashHistory(query, user);
     }
     createCashTransaction(dto, user) {
         return this.cash.createCashTransaction(dto, user);
@@ -57,8 +58,8 @@ let CashController = class CashController {
     bankBalances() {
         return this.cash.bankBalances();
     }
-    bankHistory() {
-        return this.cash.bankHistory();
+    bankHistory(query, user) {
+        return this.cash.bankHistory(query, user);
     }
     createBankTransaction(dto, user) {
         return this.cash.createBankTransaction(dto, user);
@@ -121,9 +122,11 @@ __decorate([
 ], CashController.prototype, "cashBalances", null);
 __decorate([
     (0, common_1.Get)('history'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
     __metadata("design:returntype", void 0)
 ], CashController.prototype, "cashHistory", null);
 __decorate([
@@ -145,9 +148,11 @@ __decorate([
 ], CashController.prototype, "bankBalances", null);
 __decorate([
     (0, common_1.Get)('bank/history'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
     __metadata("design:returntype", void 0)
 ], CashController.prototype, "bankHistory", null);
 __decorate([

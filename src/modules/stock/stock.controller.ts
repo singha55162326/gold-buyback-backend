@@ -24,6 +24,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RequiresOpenShift } from '../../common/decorators/requires-shift.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
 @ApiTags('stock')
 @ApiBearerAuth('bearer')
@@ -42,8 +43,8 @@ export class StockController {
   }
 
   @Get('new/history')
-  newHistory() {
-    return this.stock.newHistory();
+  newHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.stock.newHistory(query, user);
   }
 
   @Get('new/balances')
@@ -52,8 +53,8 @@ export class StockController {
   }
 
   @Get('old/history')
-  oldHistory() {
-    return this.stock.oldHistory();
+  oldHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.stock.oldHistory(query, user);
   }
 
   @Get('old/balances')
@@ -94,9 +95,10 @@ export class StockController {
 
   /* ---- §7.3 FACTORY tracking ---- */
 
+  // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ກວ້າງອອກໄດ້ຕາມສິດ (ບັງຄັບຢູ່ service).
   @Get('factory')
-  listFactoryTracking() {
-    return this.stock.listFactoryTracking();
+  listFactoryTracking(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.stock.listFactoryTracking(query, user);
   }
 
   /**
@@ -133,9 +135,20 @@ export class StockController {
 
   /* ---- §4.2 ມອບຄຳລະຫວ່າງມື້ ---- */
 
+  // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ສິດກວ້າງວັນທີບັງຄັບຢູ່ HistoryRangeService ບໍ່ແມ່ນ FE.
   @Get('handovers')
-  listHandovers(@Query('status') status?: ApprovalStatus) {
-    return this.stock.listHandovers(status);
+  listHandovers(
+    @Query() query: HistoryRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('status') status?: ApprovalStatus,
+  ) {
+    return this.stock.listHandovers(status, query, user);
+  }
+
+  /** ລາຍການຄຳເກົ່າ (ຄຳຕົ້ມ) ທີ່ຍັງບໍ່ໄດ້ມອບ — ໃຫ້ຟອມເລືອກເປັນແຖວ. */
+  @Get('handovers/pending-items')
+  pendingOldGoldItems(@Query('goldTypeId') goldTypeId?: string) {
+    return this.stock.pendingOldGoldItems(goldTypeId);
   }
 
   @Roles('PAYMENT', 'ADMIN', 'MANAGER')

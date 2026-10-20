@@ -15,6 +15,8 @@ const client_1 = require("@prisma/client");
 const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const audit_service_1 = require("../../common/services/audit.service");
+const history_range_service_1 = require("../../common/services/history-range.service");
+const code_generator_service_1 = require("../../common/services/code-generator.service");
 const business_day_service_1 = require("../../common/services/business-day.service");
 const apar_posting_service_1 = require("../../common/services/apar-posting.service");
 const D = (value) => new client_1.Prisma.Decimal(value.toFixed());
@@ -35,20 +37,25 @@ let FinanceService = class FinanceService {
     audit;
     businessDay;
     apar;
-    constructor(prisma, audit, businessDay, apar) {
+    range;
+    codes;
+    constructor(prisma, audit, businessDay, apar, range, codes) {
         this.prisma = prisma;
         this.audit = audit;
         this.businessDay = businessDay;
         this.apar = apar;
+        this.range = range;
+        this.codes = codes;
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — Module ລາຍການ Bank
      * ---------------------------------------------------------------- */
     async createBankAccount(dto, user) {
         const max = await this.prisma.bankAccount.aggregate({ _max: { sortOrder: true } });
+        const code = await this.codes.nextFor('BANK', this.prisma.bankAccount);
         const created = await this.prisma.bankAccount.create({
             data: {
-                code: dto.code.trim().toUpperCase(),
+                code,
                 nameLo: dto.nameLo.trim(),
                 sortOrder: (max._max.sortOrder ?? 0) + 1,
             },
@@ -70,9 +77,10 @@ let FinanceService = class FinanceService {
     }
     async createIncomeExpenseCategory(dto, user) {
         const max = await this.prisma.incomeExpenseCategory.aggregate({ _max: { sortOrder: true } });
+        const code = await this.codes.nextFor('INCOME_EXPENSE_CATEGORY', this.prisma.incomeExpenseCategory);
         const created = await this.prisma.incomeExpenseCategory.create({
             data: {
-                code: dto.code.trim().toUpperCase(),
+                code,
                 nameLo: dto.nameLo.trim(),
                 kind: dto.kind,
                 sortOrder: (max._max.sortOrder ?? 0) + 1,
@@ -92,13 +100,27 @@ let FinanceService = class FinanceService {
      * source of truth and this table stays a pure classification layer.
      */
     async createIncomeExpense(dto, user) {
-        const amount = (0, domain_1.dec)(dto.amount);
-        if (!amount.isFinite() || amount.lte(0)) {
-            throw new common_1.BadRequestException('ຈຳນວນເງິນຕ້ອງໃຫຍ່ກວ່າ 0');
+        // A single expense may be settled part in cash and part by transfer, in
+        // more than one currency; each leg is its own row so Module Cash and
+        // Module Bank each show what actually moved through them.
+        const legs = dto.payments?.length
+            ? dto.payments
+            : dto.method && dto.currency && dto.amount
+                ? [{ method: dto.method, bankAccountId: dto.bankAccountId, currency: dto.currency, amount: dto.amount }]
+                : [];
+        if (legs.length === 0) {
+            throw new common_1.BadRequestException('ຕ້ອງມີລາຍການຈ່າຍ/ຮັບຢ່າງໜ້ອຍ 1 ລາຍການ');
         }
-        if (dto.method === 'BANK' && !dto.bankAccountId) {
-            throw new common_1.BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
-        }
+        const resolved = legs.map((leg) => {
+            const amount = (0, domain_1.dec)(leg.amount);
+            if (!amount.isFinite() || amount.lte(0)) {
+                throw new common_1.BadRequestException('ຈຳນວນເງິນຕ້ອງໃຫຍ່ກວ່າ 0');
+            }
+            if (leg.method === 'BANK' && !leg.bankAccountId) {
+                throw new common_1.BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
+            }
+            return { ...leg, amount };
+        });
         const category = await this.prisma.incomeExpenseCategory.findFirst({
             where: { id: dto.categoryId, deletedAt: null },
         });
@@ -107,66 +129,82 @@ let FinanceService = class FinanceService {
         const day = await this.businessDay.current();
         const isIncome = category.kind === 'INCOME';
         return this.prisma.$transaction(async (tx) => {
-            const created = await tx.incomeExpenseTransaction.create({
-                data: {
-                    code: await this.nextCode(tx, 'incomeExpenseTransaction', 'IE'),
-                    businessDayId: day.id,
-                    categoryId: dto.categoryId,
-                    kind: category.kind,
-                    method: dto.method,
-                    bankAccountId: dto.bankAccountId ?? null,
-                    currency: dto.currency,
-                    amount: D(amount),
-                    note: dto.note ?? null,
-                    createdById: user.id,
-                },
-                include: { category: true, bankAccount: true },
-            });
-            if (dto.method === 'CASH') {
-                await tx.cashTransaction.create({
+            const rows = [];
+            for (const leg of resolved) {
+                const created = await tx.incomeExpenseTransaction.create({
                     data: {
+                        code: await this.nextCode(tx, 'incomeExpenseTransaction', 'IE'),
                         businessDayId: day.id,
-                        type: isIncome ? 'OTHER_INCOME' : 'OTHER_EXPENSE',
-                        currency: dto.currency,
-                        amount: D(amount),
-                        refType: 'IncomeExpenseTransaction',
-                        refId: created.id,
-                        note: `${category.nameLo}${dto.note ? ` — ${dto.note}` : ''}`,
+                        categoryId: dto.categoryId,
+                        kind: category.kind,
+                        method: leg.method,
+                        bankAccountId: leg.bankAccountId ?? null,
+                        currency: leg.currency,
+                        amount: D(leg.amount),
+                        note: dto.note ?? null,
                         createdById: user.id,
                     },
+                    include: { category: true, bankAccount: true },
                 });
+                rows.push(created);
+                if (leg.method === 'CASH') {
+                    await tx.cashTransaction.create({
+                        data: {
+                            businessDayId: day.id,
+                            type: isIncome ? 'OTHER_INCOME' : 'OTHER_EXPENSE',
+                            currency: leg.currency,
+                            amount: D(leg.amount),
+                            refType: 'IncomeExpenseTransaction',
+                            refId: created.id,
+                            note: `${category.nameLo}${dto.note ? ` — ${dto.note}` : ''}`,
+                            createdById: user.id,
+                        },
+                    });
+                }
+                else {
+                    await tx.bankTransaction.create({
+                        data: {
+                            businessDayId: day.id,
+                            bankAccountId: leg.bankAccountId,
+                            type: isIncome ? 'INCOME' : 'EXPENSE',
+                            currency: leg.currency,
+                            amount: D(leg.amount),
+                            refType: 'IncomeExpenseTransaction',
+                            refId: created.id,
+                            note: `${category.nameLo}${dto.note ? ` — ${dto.note}` : ''}`,
+                            createdById: user.id,
+                        },
+                    });
+                }
+                await this.audit.record({
+                    actorId: user.id, action: 'CREATE', entity: 'IncomeExpenseTransaction',
+                    entityId: created.id,
+                    after: { category: category.nameLo, currency: leg.currency, amount: leg.amount.toFixed() },
+                    summary: `${isIncome ? 'ລາຍຮັບ' : 'ລາຍຈ່າຍ'} ${category.nameLo} ${leg.amount.toFixed(0)} ${leg.currency}`,
+                }, tx);
             }
-            else {
-                await tx.bankTransaction.create({
-                    data: {
-                        businessDayId: day.id,
-                        bankAccountId: dto.bankAccountId,
-                        type: isIncome ? 'INCOME' : 'EXPENSE',
-                        currency: dto.currency,
-                        amount: D(amount),
-                        refType: 'IncomeExpenseTransaction',
-                        refId: created.id,
-                        note: `${category.nameLo}${dto.note ? ` — ${dto.note}` : ''}`,
-                        createdById: user.id,
-                    },
-                });
-            }
-            await this.audit.record({
-                actorId: user.id, action: 'CREATE', entity: 'IncomeExpenseTransaction',
-                entityId: created.id,
-                after: { category: category.nameLo, currency: dto.currency, amount: amount.toFixed() },
-                summary: `${isIncome ? 'ລາຍຮັບ' : 'ລາຍຈ່າຍ'} ${category.nameLo} ${amount.toFixed(0)} ${dto.currency}`,
-            }, tx);
-            return created;
+            // One leg still returns the row itself, so existing callers are unaffected.
+            return rows.length === 1 ? rows[0] : rows;
         });
     }
-    incomeExpenseHistory(kind, limit = 200) {
-        return this.prisma.incomeExpenseTransaction.findMany({
-            where: { deletedAt: null, ...(kind ? { kind } : {}) },
-            include: { category: true, bankAccount: true },
-            orderBy: { createdAt: 'desc' },
-            take: Math.min(limit, 500),
-        });
+    async incomeExpenseHistory(kind, query, user) {
+        const range = this.range.resolve(query, user);
+        const where = {
+            deletedAt: null,
+            createdAt: history_range_service_1.HistoryRangeService.window(range),
+            ...(kind ? { kind } : {}),
+        };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.incomeExpenseTransaction.findMany({
+                where,
+                include: { category: true, bankAccount: true },
+                orderBy: { createdAt: 'desc' },
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.incomeExpenseTransaction.count({ where }),
+        ]);
+        return this.range.page(rows, total, range);
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — Module ຝາກສິນຄ້າ
@@ -240,16 +278,28 @@ let FinanceService = class FinanceService {
         });
         return updated;
     }
-    async consignments(status) {
-        const rows = await this.prisma.consignment.findMany({
-            where: { deletedAt: null, ...(status ? { status } : {}) },
-            include: { lines: true, customer: true },
-            orderBy: { createdAt: 'desc' },
-            take: 200,
-        });
+    async consignments(status, query, user) {
+        const range = this.range.resolve(query, user);
+        const where = {
+            deletedAt: null,
+            createdAt: history_range_service_1.HistoryRangeService.window(range),
+            ...(status ? { status } : {}),
+        };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.consignment.findMany({
+                where,
+                include: { lines: true, customer: true },
+                orderBy: { createdAt: 'desc' },
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.consignment.count({ where }),
+        ]);
+        // Totals describe the page's range, not the page: the shop wants to know
+        // what it is holding over the period, not what fits on screen.
         const held = rows.filter((r) => r.status === 'HELD');
         return {
-            rows,
+            ...this.range.page(rows, total, range),
             totals: {
                 totalWeightG: held
                     .reduce((sum, r) => sum.plus(toDec(r.totalWeightG)), (0, domain_1.dec)(0))
@@ -274,11 +324,14 @@ let FinanceService = class FinanceService {
     }
     async createApArCategory(dto, user) {
         const max = await this.prisma.apArCashCategory.aggregate({ _max: { sortOrder: true } });
+        const code = await this.codes.nextFor('APAR_CASH_CATEGORY', this.prisma.apArCashCategory);
         const created = await this.prisma.apArCashCategory.create({
             data: {
-                code: dto.code.trim().toUpperCase(),
+                code,
                 nameLo: dto.nameLo.trim(),
-                side: dto.side ?? null,
+                // 'AP_AR' is the UI's way of saying "both sides", and both sides is
+                // what NULL has always meant to every reader of this column.
+                side: dto.side && dto.side !== 'AP_AR' ? dto.side : null,
                 sortOrder: (max._max.sortOrder ?? 0) + 1,
             },
         });
@@ -464,13 +517,24 @@ let FinanceService = class FinanceService {
             };
         });
     }
-    apArHistory(side, limit = 200) {
-        return this.prisma.cashApArLedger.findMany({
-            where: { side, deletedAt: null },
-            include: { partner: true, category: true },
-            orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
-            take: Math.min(limit, 500),
-        });
+    async apArHistory(side, query, user) {
+        const range = this.range.resolve(query, user);
+        const where = {
+            side,
+            deletedAt: null,
+            businessDate: history_range_service_1.HistoryRangeService.dayWindow(range),
+        };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.cashApArLedger.findMany({
+                where,
+                include: { partner: true, category: true },
+                orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.cashApArLedger.count({ where }),
+        ]);
+        return this.range.page(rows, total, range);
     }
     /** Sequential code: <PREFIX>-YYMMDD-NNN. */
     async nextCode(tx, model, prefix) {
@@ -481,6 +545,153 @@ let FinanceService = class FinanceService {
             : await tx.incomeExpenseTransaction.count({ where: { code: { startsWith: stem } } });
         return `${stem}-${String(count + 1).padStart(3, '0')}`;
     }
+    // --- ແກ້ໄຂ / ລຶບ ຂໍ້ມູນອ້າງອີງ (§3.7) -------------------------------------
+    /**
+     * Refuse a delete that would orphan history. Reference data is named by
+     * ledger rows that must stay readable, so deleting is only for rows
+     * nothing has used; anything in use is deactivated instead.
+     */
+    async assertUnused(labelLo, counts) {
+        const used = [];
+        for (const [what, pending] of counts) {
+            if ((await pending) > 0)
+                used.push(what);
+        }
+        if (used.length > 0) {
+            throw new common_1.BadRequestException(`ລຶບ${labelLo}ນີ້ບໍ່ໄດ້ — ຖືກໃຊ້ຢູ່ໃນ ${used.join(', ')}. ປິດການນຳໃຊ້ແທນ.`);
+        }
+    }
+    async updateBankAccount(id, dto, user) {
+        const before = await this.prisma.bankAccount.findUnique({ where: { id } });
+        if (!before)
+            throw new common_1.NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+        const after = await this.prisma.bankAccount.update({
+            where: { id },
+            data: {
+                ...(dto.nameLo !== undefined ? { nameLo: dto.nameLo.trim() } : {}),
+                ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+            },
+        });
+        await this.audit.record({
+            actorId: user.id, action: 'UPDATE', entity: 'BankAccount', entityId: id,
+            before, after, summary: `ແກ້ໄຂທະນາຄານ ${after.nameLo}`,
+        });
+        return after;
+    }
+    /**
+     * ຫ້າມລົບຖ້າມີທຸລະກຳ ຫຼື ຍອດເງິນຄ້າງ.
+     *
+     * BankAccount has no deletedAt — it is referenced by eight payment tables
+     * whose rows must keep resolving — so "ລຶບ" deactivates it. That is also
+     * the only safe reading: a bank with a balance has not stopped existing.
+     */
+    async deleteBankAccount(id, user) {
+        const before = await this.prisma.bankAccount.findUnique({ where: { id } });
+        if (!before)
+            throw new common_1.NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+        await this.assertUnused('ບັນຊີທະນາຄານ', [
+            ['ທຸລະກຳ Bank', this.prisma.bankTransaction.count({ where: { bankAccountId: id } })],
+            ['ຍອດ Bank', this.prisma.bankNetBalance.count({ where: { bankAccountId: id } })],
+            ['Buyback', this.prisma.buybackPayment.count({ where: { bankAccountId: id } })],
+            ['ລາຍການປ່ຽນ', this.prisma.exchangePayment.count({ where: { bankAccountId: id } })],
+            ['ສິນເຊື່ອ', this.prisma.creditReceipt.count({ where: { bankAccountId: id } })],
+            ['Order', this.prisma.orderReceipt.count({ where: { bankAccountId: id } })],
+            ['ລາຍຮັບລາຍຈ່າຍ', this.prisma.incomeExpenseTransaction.count({ where: { bankAccountId: id } })],
+            ['Advance', this.prisma.advanceLedger.count({ where: { bankAccountId: id } })],
+        ]);
+        const after = await this.prisma.bankAccount.update({
+            where: { id },
+            data: { isActive: false },
+        });
+        await this.audit.record({
+            actorId: user.id, action: 'DELETE', entity: 'BankAccount', entityId: id,
+            before, after, summary: `ລຶບທະນາຄານ ${before.nameLo}`,
+        });
+        return after;
+    }
+    async updateIncomeExpenseCategory(id, dto, user) {
+        const before = await this.prisma.incomeExpenseCategory.findFirst({
+            where: { id, deletedAt: null },
+        });
+        if (!before)
+            throw new common_1.NotFoundException('ບໍ່ພົບລາຍການຮັບຈ່າຍ');
+        const after = await this.prisma.incomeExpenseCategory.update({
+            where: { id },
+            data: {
+                ...(dto.nameLo !== undefined ? { nameLo: dto.nameLo.trim() } : {}),
+                ...(dto.kind !== undefined ? { kind: dto.kind } : {}),
+                ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+            },
+        });
+        await this.audit.record({
+            actorId: user.id, action: 'UPDATE', entity: 'IncomeExpenseCategory', entityId: id,
+            before, after, summary: `ແກ້ໄຂລາຍການຮັບຈ່າຍ ${after.nameLo}`,
+        });
+        return after;
+    }
+    async deleteIncomeExpenseCategory(id, user) {
+        const before = await this.prisma.incomeExpenseCategory.findFirst({
+            where: { id, deletedAt: null },
+        });
+        if (!before)
+            throw new common_1.NotFoundException('ບໍ່ພົບລາຍການຮັບຈ່າຍ');
+        await this.assertUnused('ລາຍການຮັບຈ່າຍ', [
+            [
+                'ລາຍຮັບລາຍຈ່າຍ',
+                this.prisma.incomeExpenseTransaction.count({ where: { categoryId: id } }),
+            ],
+        ]);
+        const after = await this.prisma.incomeExpenseCategory.update({
+            where: { id },
+            data: { deletedAt: new Date(), isActive: false },
+        });
+        await this.audit.record({
+            actorId: user.id, action: 'DELETE', entity: 'IncomeExpenseCategory', entityId: id,
+            before, after, summary: `ລຶບລາຍການຮັບຈ່າຍ ${before.nameLo}`,
+        });
+        return after;
+    }
+    async updateApArCategory(id, dto, user) {
+        const before = await this.prisma.apArCashCategory.findFirst({
+            where: { id, deletedAt: null },
+        });
+        if (!before)
+            throw new common_1.NotFoundException('ບໍ່ພົບປະເພດລາຍການ AP-AR');
+        const after = await this.prisma.apArCashCategory.update({
+            where: { id },
+            data: {
+                ...(dto.nameLo !== undefined ? { nameLo: dto.nameLo.trim() } : {}),
+                ...(dto.side !== undefined
+                    ? { side: dto.side === 'AP_AR' ? null : dto.side }
+                    : {}),
+                ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+            },
+        });
+        await this.audit.record({
+            actorId: user.id, action: 'UPDATE', entity: 'ApArCashCategory', entityId: id,
+            before, after, summary: `ແກ້ໄຂປະເພດລາຍການ AP-AR ${after.nameLo}`,
+        });
+        return after;
+    }
+    async deleteApArCategory(id, user) {
+        const before = await this.prisma.apArCashCategory.findFirst({
+            where: { id, deletedAt: null },
+        });
+        if (!before)
+            throw new common_1.NotFoundException('ບໍ່ພົບປະເພດລາຍການ AP-AR');
+        await this.assertUnused('ປະເພດລາຍການ AP-AR', [
+            ['AP/AR (ເງິນ)', this.prisma.cashApArLedger.count({ where: { categoryId: id } })],
+        ]);
+        const after = await this.prisma.apArCashCategory.update({
+            where: { id },
+            data: { deletedAt: new Date(), isActive: false },
+        });
+        await this.audit.record({
+            actorId: user.id, action: 'DELETE', entity: 'ApArCashCategory', entityId: id,
+            before, after, summary: `ລຶບປະເພດລາຍການ AP-AR ${before.nameLo}`,
+        });
+        return after;
+    }
 };
 exports.FinanceService = FinanceService;
 exports.FinanceService = FinanceService = __decorate([
@@ -488,6 +699,8 @@ exports.FinanceService = FinanceService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_service_1.AuditService,
         business_day_service_1.BusinessDayService,
-        apar_posting_service_1.ApArPostingService])
+        apar_posting_service_1.ApArPostingService,
+        history_range_service_1.HistoryRangeService,
+        code_generator_service_1.CodeGeneratorService])
 ], FinanceService);
 //# sourceMappingURL=finance.service.js.map

@@ -3,6 +3,9 @@ import { Prisma, type Currency, type PaymentMethod } from '@prisma/client';
 import { dec, netAdvance, type Decimal } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessDayService } from './business-day.service';
+import { HistoryRangeService } from './history-range.service';
+import type { HistoryRangeDto } from '../dto/history-range.dto';
+import type { AuthenticatedUser } from '../decorators/current-user.decorator';
 
 const D = (value: Decimal) => new Prisma.Decimal(value.toFixed());
 const toDec = (value: Prisma.Decimal | null | undefined) => dec(value?.toFixed() ?? 0);
@@ -32,7 +35,10 @@ export interface AdvancePostingInput {
  */
 @Injectable()
 export class AdvanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly range: HistoryRangeService,
+  ) {}
 
   async post(tx: Prisma.TransactionClient, input: AdvancePostingInput) {
     if (input.amount.lte(0)) return null;
@@ -74,10 +80,11 @@ export class AdvanceService {
   /** ຍອດ Advance ສຸດທິ per currency — what COH subtracts. */
   async netByCurrency(
     client: Prisma.TransactionClient | PrismaService = this.prisma,
+    asOf?: Date,
   ): Promise<Record<Currency, Decimal>> {
     const rows = await client.advanceLedger.groupBy({
       by: ['currency'],
-      where: { deletedAt: null },
+      where: { deletedAt: null, ...(asOf ? { businessDate: { lte: asOf } } : {}) },
       _sum: { amountIn: true, amountOut: true },
     });
 
@@ -109,17 +116,52 @@ export class AdvanceService {
     };
   }
 
-  /** History for the Advance module, keyed to the order it belongs to. */
-  history(limit = 200) {
-    return this.prisma.advanceLedger.findMany({
-      where: { deletedAt: null },
-      include: {
-        // The View detail in §7 needs the full order context.
-        order: { include: { customer: true, goldItem: true, supplier: true } },
-        bankAccount: true,
-      },
-      orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
-      take: Math.min(limit, 500),
-    });
+  /**
+   * History for the Advance module, keyed to the order it belongs to.
+   *
+   * ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້ ແລະ ກວ້າງອອກໄດ້ຕາມສິດ. ກອງຕາມ businessDate (ເປັນ
+   * ຖັນວັນທີລ້ວນ) ບໍ່ແມ່ນ createdAt, ເພາະລາຍການຂອງມື້ການຄ້າໜຶ່ງອາດຖືກ
+   * ບັນທຶກຫຼັງທ່ຽງຄືນ.
+   */
+  async history(query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      businessDate: HistoryRangeService.dayWindow(range),
+    };
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.advanceLedger.findMany({
+        where,
+        include: {
+          // The View detail in §7 needs the full order context.
+          order: { include: { customer: true, goldItem: true, supplier: true } },
+          bankAccount: true,
+        },
+        orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.advanceLedger.count({ where }),
+    ]);
+
+    return this.range.page(
+      rows.map((row) => {
+        /*
+         * ຍອດເງິນສຸດທິ = ຍອດເງິນທີ່ໄດ້ຮັບ − ຍອດຄົງເຫຼືອຮັບ − ຍອດເງິນຕັດຊຳລະ
+         * ຕາມທີ່ລູກຄ້າກຳນົດ. ຄຳນວນຢູ່ server ເພື່ອບໍ່ໃຫ້ສອງໜ້າຈໍຄຳນວນຄົນລະແບບ.
+         */
+        const received = toDec(row.amountIn);
+        const outstanding = toDec(row.order.balanceAmount);
+        const settled = toDec(row.amountOut);
+        return {
+          ...row,
+          outstandingAmount: outstanding.toFixed(),
+          netAmount: received.minus(outstanding).minus(settled).toFixed(),
+        };
+      }),
+      total,
+      range,
+    );
   }
 }

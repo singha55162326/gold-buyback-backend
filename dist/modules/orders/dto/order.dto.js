@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UpdateOrderStatusDto = exports.CreateOrderDto = exports.OrderReceiptDto = void 0;
+exports.ReceiveOrderDto = exports.UpdateOrderStatusDto = exports.CreateOrderDto = exports.OrderReceiptLinesDto = exports.OrderReceiptDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
@@ -40,6 +40,21 @@ __decorate([
     (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
     __metadata("design:type", String)
 ], OrderReceiptDto.prototype, "amount", void 0);
+/** The legs of one receipt — ສົດ and ໂອນ, several currencies, one bill. */
+class OrderReceiptLinesDto {
+    receipts;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { receipts: { required: true, type: () => [require("./order.dto").OrderReceiptDto], minItems: 1 } };
+    }
+}
+exports.OrderReceiptLinesDto = OrderReceiptLinesDto;
+__decorate([
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMinSize)(1, { message: 'ຕ້ອງມີລາຍການຮັບເງິນຢ່າງໜ້ອຍ 1 ລາຍການ' }),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => OrderReceiptDto),
+    __metadata("design:type", Array)
+], OrderReceiptLinesDto.prototype, "receipts", void 0);
 class CreateOrderDto {
     phone;
     /** ເລກບິນ 4 ຕົວຫຼັກ (TOR §7). */
@@ -53,8 +68,9 @@ class CreateOrderDto {
     totalAmount;
     note;
     receipt;
+    receipts;
     static _OPENAPI_METADATA_FACTORY() {
-        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, billNo: { required: true, type: () => String, description: "\u0EC0\u0EA5\u0E81\u0E9A\u0EB4\u0E99 4 \u0E95\u0EBB\u0EA7\u0EAB\u0EBC\u0EB1\u0E81 (TOR \u00A77).", pattern: "^\\d{4}$" }, productType: { required: true, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: true, type: () => String, description: "\u0E8A\u0EB7\u0EC8\u0E9E\u0EB0\u0E99\u0EB1\u0E81\u0E87\u0EB2\u0E99 \u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A Order." }, goldItemId: { required: true, type: () => String }, weightG: { required: true, type: () => String }, quantity: { required: true, type: () => Number, minimum: 1 }, totalAmount: { required: true, type: () => String }, note: { required: false, type: () => String }, receipt: { required: true, type: () => require("./order.dto").OrderReceiptDto } };
+        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, billNo: { required: true, type: () => String, description: "\u0EC0\u0EA5\u0E81\u0E9A\u0EB4\u0E99 4 \u0E95\u0EBB\u0EA7\u0EAB\u0EBC\u0EB1\u0E81 (TOR \u00A77).", pattern: "^\\d{4}$" }, productType: { required: true, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: true, type: () => String, description: "\u0E8A\u0EB7\u0EC8\u0E9E\u0EB0\u0E99\u0EB1\u0E81\u0E87\u0EB2\u0E99 \u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A Order." }, goldItemId: { required: true, type: () => String }, weightG: { required: true, type: () => String }, quantity: { required: true, type: () => Number, minimum: 1 }, totalAmount: { required: true, type: () => String }, note: { required: false, type: () => String }, receipt: { required: false, type: () => require("./order.dto").OrderReceiptDto }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto] } };
     }
 }
 exports.CreateOrderDto = CreateOrderDto;
@@ -97,10 +113,21 @@ __decorate([
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "note", void 0);
 __decorate([
+    (0, class_validator_1.ValidateNested)()
+    /** Superseded by `receipts`; accepted so an older client still works. */
+    ,
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.ValidateNested)(),
     (0, class_transformer_1.Type)(() => OrderReceiptDto),
     __metadata("design:type", OrderReceiptDto)
 ], CreateOrderDto.prototype, "receipt", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => OrderReceiptDto),
+    __metadata("design:type", Array)
+], CreateOrderDto.prototype, "receipts", void 0);
 class UpdateOrderStatusDto {
     status;
     /** Required for SENT_TO_SMITH — ເລືອກ Supplier (TOR §7). */
@@ -151,4 +178,44 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], UpdateOrderStatusDto.prototype, "note", void 0);
+class ReceiveOrderDto {
+    /** Single-leg form, kept so an older client still works. */
+    method;
+    bankAccountId;
+    currency;
+    amount;
+    /** Multi-leg form: ສົດ and ໂອນ, several currencies, one receipt. */
+    receipts;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { method: { required: false, description: "Single-leg form, kept so an older client still works.", enum: ["CASH", "BANK"], enum: ['CASH', 'BANK'] }, bankAccountId: { required: false, type: () => String }, currency: { required: false, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: false, type: () => String }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto], description: "Multi-leg form: \u0EAA\u0EBB\u0E94 and \u0EC2\u0EAD\u0E99, several currencies, one receipt." } };
+    }
+}
+exports.ReceiveOrderDto = ReceiveOrderDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['CASH', 'BANK']),
+    __metadata("design:type", String)
+], ReceiveOrderDto.prototype, "method", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], ReceiveOrderDto.prototype, "bankAccountId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['LAK', 'THB', 'USD']),
+    __metadata("design:type", String)
+], ReceiveOrderDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumberString)(),
+    __metadata("design:type", String)
+], ReceiveOrderDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => OrderReceiptDto),
+    __metadata("design:type", Array)
+], ReceiveOrderDto.prototype, "receipts", void 0);
 //# sourceMappingURL=order.dto.js.map

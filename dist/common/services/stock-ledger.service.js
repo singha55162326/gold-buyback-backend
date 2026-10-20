@@ -41,26 +41,31 @@ let StockLedgerService = class StockLedgerService {
         this.prisma = prisma;
     }
     /** GOLD (g) NEW and ຕົ້ນທຶນຄຳ NEW — the latest row (§7.1). */
-    async newPosition(client = this.prisma) {
+    async newPosition(client = this.prisma, asOf) {
         const last = await client.stockNewLedger.findFirst({
-            where: { deletedAt: null },
+            where: { deletedAt: null, ...(asOf ? { businessDate: { lte: asOf } } : {}) },
             orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
         });
         return { weightG: toDec(last?.weightG), cost: toDec(last?.cost) };
     }
     /** GOLD (g) OLD and ຕົ້ນທຶນຄຳ OLD — the latest row (§7.2). */
-    async oldPosition(client = this.prisma) {
+    async oldPosition(client = this.prisma, asOf) {
         const last = await client.stockOldLedger.findFirst({
-            where: { deletedAt: null },
+            where: { deletedAt: null, ...(asOf ? { businessDate: { lte: asOf } } : {}) },
             orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
         });
         return { weightG: toDec(last?.weightG), cost: toDec(last?.cost) };
     }
-    /** WAC ປັດຈຸບັນ (§3.7) — always computed from the newest NEW and OLD rows. */
-    async currentWac(client = this.prisma) {
+    /**
+     * WAC (§3.7) — ຈາກແຖວ NEW ແລະ OLD ລ່າສຸດ.
+     *
+     * `asOf` ເຮັດໃຫ້ອ່ານຍ້ອນຫຼັງໄດ້: ແຖວລ່າສຸດ *ຈົນເຖິງ* ວັນທີນັ້ນ — ບໍ່ແມ່ນ
+     * ແຖວຂອງວັນທີນັ້ນ — ເພາະມື້ທີ່ບໍ່ມີການເຄື່ອນໄຫວ ກໍຍັງມີຍອດຄົງຄ້າງຢູ່.
+     */
+    async currentWac(client = this.prisma, asOf) {
         const [newPos, oldPos] = await Promise.all([
-            this.newPosition(client),
-            this.oldPosition(client),
+            this.newPosition(client, asOf),
+            this.oldPosition(client, asOf),
         ]);
         return {
             ...(0, domain_1.calculateWac)({

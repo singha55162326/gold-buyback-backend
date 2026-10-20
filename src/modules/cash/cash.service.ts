@@ -10,6 +10,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { ApprovalService } from '../../common/services/approval.service';
 import { BusinessDayService } from '../../common/services/business-day.service';
+import { HistoryRangeService } from '../../common/services/history-range.service';
+import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import type {
@@ -59,6 +61,7 @@ export class CashService {
     private readonly approval: ApprovalService,
     private readonly businessDay: BusinessDayService,
     private readonly notifications: NotificationsService,
+    private readonly range: HistoryRangeService,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -282,12 +285,18 @@ export class CashService {
   }
 
   /** ຍອດເງິນສົດຄົງເຫຼືອ per currency, for today (TOR §3.7). */
-  async cashBalances() {
-    const day = await this.businessDay.current();
+  /**
+   * ຍອດເງິນສົດຂອງມື້ການຄ້າ. `dayId` ວ່າງ = ມື້ນີ້.
+   *
+   * ຮັບເປັນ id ບໍ່ແມ່ນວັນທີ ເພື່ອໃຫ້ຜູ້ເອີ້ນແກ້ໄດ້ວ່າ "ມື້ນັ້ນບໍ່ມີຢູ່" ແນວໃດ
+   * — ຍອດເງິນສູນ ກັບ ມື້ທີ່ບໍ່ເຄີຍເປີດ ບໍ່ແມ່ນເລື່ອງດຽວກັນ.
+   */
+  async cashBalances(dayId?: string) {
+    const businessDayId = dayId ?? (await this.businessDay.current()).id;
 
     const rows = await this.prisma.cashTransaction.groupBy({
       by: ['currency', 'type'],
-      where: { businessDayId: day.id, deletedAt: null },
+      where: { businessDayId, deletedAt: null },
       _sum: { amount: true },
     });
 
@@ -311,12 +320,22 @@ export class CashService {
     });
   }
 
-  cashHistory(limit = 200) {
-    return this.prisma.cashTransaction.findMany({
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(limit, 500),
-    });
+  async cashHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      createdAt: HistoryRangeService.window(range),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.cashTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.cashTransaction.count({ where }),
+    ]);
+    return this.range.page(rows, total, range);
   }
 
   /* ---------------------------------------------------------------- *
@@ -365,17 +384,18 @@ export class CashService {
    * A non-zero variance is the shop's signal that the ledger and the bank
    * statement have diverged, so it is surfaced rather than reconciled away.
    */
-  async bankBalances() {
-    const day = await this.businessDay.current();
+  /** ຍອດທະນາຄານຂອງມື້ການຄ້າ. `dayId` ວ່າງ = ມື້ນີ້. */
+  async bankBalances(dayId?: string) {
+    const businessDayId = dayId ?? (await this.businessDay.current()).id;
 
     const [accounts, rows, netBalances] = await Promise.all([
       this.prisma.bankAccount.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
       this.prisma.bankTransaction.groupBy({
         by: ['bankAccountId', 'currency', 'type'],
-        where: { businessDayId: day.id, deletedAt: null },
+        where: { businessDayId, deletedAt: null },
         _sum: { amount: true },
       }),
-      this.prisma.bankNetBalance.findMany({ where: { businessDayId: day.id } }),
+      this.prisma.bankNetBalance.findMany({ where: { businessDayId } }),
     ]);
 
     const netByKey = new Map(
@@ -447,12 +467,22 @@ export class CashService {
     return saved;
   }
 
-  bankHistory(limit = 200) {
-    return this.prisma.bankTransaction.findMany({
-      where: { deletedAt: null },
-      include: { bankAccount: true },
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(limit, 500),
-    });
+  async bankHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      createdAt: HistoryRangeService.window(range),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.bankTransaction.findMany({
+        where,
+        include: { bankAccount: true },
+        orderBy: { createdAt: 'desc' },
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.bankTransaction.count({ where }),
+    ]);
+    return this.range.page(rows, total, range);
   }
 }

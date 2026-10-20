@@ -35,6 +35,9 @@ let AdminController = class AdminController {
     updateUser(id, dto, user) {
         return this.admin.updateUser(id, dto, user);
     }
+    deleteUser(id, user) {
+        return this.admin.deleteUser(id, user);
+    }
     resetPassword(id, dto, user) {
         return this.admin.resetPassword(id, dto, user);
     }
@@ -83,6 +86,15 @@ __decorate([
     __metadata("design:paramtypes", [String, admin_dto_1.UpdateUserDto, Object]),
     __metadata("design:returntype", void 0)
 ], AdminController.prototype, "updateUser", null);
+__decorate([
+    (0, common_1.Delete)('users/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], AdminController.prototype, "deleteUser", null);
 __decorate([
     (0, common_1.Post)('users/:id/password'),
     openapi.ApiResponse({ status: 201 }),

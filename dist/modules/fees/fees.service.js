@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const audit_service_1 = require("../../common/services/audit.service");
+const pricing_service_1 = require("../pricing/pricing.service");
 /**
  * The fee tables of TOR §3.2 and §3.4.
  *
@@ -25,9 +26,11 @@ const audit_service_1 = require("../../common/services/audit.service");
 let FeesService = class FeesService {
     prisma;
     audit;
-    constructor(prisma, audit) {
+    pricing;
+    constructor(prisma, audit, pricing) {
         this.prisma = prisma;
         this.audit = audit;
+        this.pricing = pricing;
     }
     toDecimal(raw, label, allowZero = true) {
         const value = (0, domain_1.dec)(raw);
@@ -252,13 +255,29 @@ let FeesService = class FeesService {
             after: created,
             summary: `ອັບເດດຄ່າຫັກຊື້ຄືນ ${tier.labelLo}`,
         });
-        return created;
+        /*
+         * Re-price immediately.
+         *
+         * ລາຄາຊື້ຄືນ is derived from this rule, but it is READ from a price
+         * snapshot — so changing the rule used to leave every quoted buyback
+         * price on the old figure until someone retyped the gold price. The
+         * shop would have edited the rule, seen ຈັດການ Products unchanged, and
+         * reasonably concluded the edit had not saved.
+         *
+         * Both tables are append-only, so this keeps BOTH histories: the rule
+         * change is its own row, and the re-priced board is a new snapshot
+         * beside the old ones. Nothing is overwritten and every past quote can
+         * still be re-derived from the snapshot that was current at the time.
+         */
+        const board = await this.pricing.recalculate(actorId);
+        return { ...created, board };
     }
 };
 exports.FeesService = FeesService;
 exports.FeesService = FeesService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        audit_service_1.AuditService])
+        audit_service_1.AuditService,
+        pricing_service_1.PricingService])
 ], FeesService);
 //# sourceMappingURL=fees.service.js.map

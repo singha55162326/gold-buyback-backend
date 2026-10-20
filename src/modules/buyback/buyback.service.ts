@@ -8,6 +8,8 @@ import { Prisma, type ApprovalStatus } from '@prisma/client';
 import { calculateBuyback, dec, type BuybackGoldKind, type Decimal } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { HistoryRangeService } from '../../common/services/history-range.service';
+import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import { ApprovalService } from '../../common/services/approval.service';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { StockLedgerService } from '../../common/services/stock-ledger.service';
@@ -54,6 +56,7 @@ export class BuybackService {
     private readonly notifications: NotificationsService,
     private readonly pricingContext: PricingContextService,
     private readonly stockLedger: StockLedgerService,
+    private readonly range: HistoryRangeService,
   ) {}
 
   private kindFor(code: string): BuybackGoldKind {
@@ -138,6 +141,11 @@ export class BuybackService {
         `ຄິດໄລ່ລາຄາບໍ່ໄດ້ (${result.branch}) — ກະລຸນາກວດສອບນ້ຳໜັກ ແລະ ປະເພດຄຳ`,
       );
     }
+
+    // ວິທີຈ່າຍ ສົດ / ໂອນ ແຍກກັນ — a ໂອນ leg has to name a real, open account
+    // before anything is written, because confirm books it against that
+    // account and has nowhere to put the payout otherwise.
+    await this.assertBankLegs(dto.payments);
 
     const payments = this.resolvePayments(dto.payments, result.payableAmount, context.rates);
 
@@ -313,7 +321,15 @@ export class BuybackService {
               createdById: user.id,
             },
           });
-        } else if (payment.bankAccountId) {
+        } else {
+          // Checked at creation, re-checked here: a ໂອນ leg with no account
+          // would otherwise take gold into stock without the money ever
+          // leaving a bank balance.
+          if (!payment.bankAccountId) {
+            throw new BadRequestException(
+              `ແຖວຈ່າຍແບບໂອນຂອງ ${buyback.code} ບໍ່ມີບັນຊີທະນາຄານ — ຢືນຢັນບໍ່ໄດ້`,
+            );
+          }
           await tx.bankTransaction.create({
             data: {
               businessDayId: day.id,
@@ -365,16 +381,33 @@ export class BuybackService {
     });
   }
 
-  async list(status?: ApprovalStatus) {
-    const rows = await this.prisma.buyback.findMany({
-      where: { deletedAt: null, ...(status ? { status } : {}) },
-      include: { customer: true, goldType: true, goldItem: true, payments: true },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-    });
+  async list(status: ApprovalStatus | undefined, query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      createdAt: HistoryRangeService.window(range),
+      ...(status ? { status } : {}),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.buyback.findMany({
+        where,
+        include: {
+          customer: true,
+          goldType: true,
+          goldItem: true,
+          // ແຖວໂອນ ຕ້ອງບອກໄດ້ວ່າ ເງິນອອກຈາກບັນຊີໃດ — ບໍ່ດັ່ງນັ້ນ ປະຫວັດຈະ
+          // ແຍກ ສົດ/ໂອນ ບໍ່ອອກ.
+          payments: { include: { bankAccount: { select: { nameLo: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.buyback.count({ where }),
+    ]);
 
     // TOR History tables carry UPDATED BY.
-    return this.audit.withActorNames(rows);
+    return this.range.page(await this.audit.withActorNames(rows), total, range);
   }
 
   /* ---------------------------------------------------------------- *
@@ -387,6 +420,29 @@ export class BuybackService {
    *   CHANGE (LAK ONLY) = (Amount × Rate) − ລວມເງິນທີ່ຕ້ອງຈ່າຍ (LAK)
    *   Amount LAK ຕ້ອງ ≤ TOTAL(LAK) ຈຶ່ງບັນທຶກໄດ້
    */
+  /**
+   * ສົດ ແລະ ໂອນ ເປັນສອງເສັ້ນທາງແຍກກັນ: a ສົດ leg settles against the drawer
+   * of the open shift, a ໂອນ leg against one named bank account. One buyback
+   * may carry both, so each leg is checked on its own.
+   */
+  private async assertBankLegs(lines: BuybackPaymentLineDto[]) {
+    const bankLegs = lines.filter((line) => line.method === 'BANK');
+    if (bankLegs.length === 0) return;
+
+    if (bankLegs.some((line) => !line.bankAccountId)) {
+      throw new BadRequestException('ການຈ່າຍແບບໂອນ ຕ້ອງເລືອກທະນາຄານ');
+    }
+
+    const ids = [...new Set(bankLegs.map((line) => line.bankAccountId!))];
+    const open = await this.prisma.bankAccount.findMany({
+      where: { id: { in: ids }, isActive: true },
+      select: { id: true },
+    });
+    if (open.length !== ids.length) {
+      throw new BadRequestException('ບັນຊີທະນາຄານທີ່ເລືອກບໍ່ມີ ຫຼື ຖືກປິດໃຊ້ງານແລ້ວ');
+    }
+  }
+
   private resolvePayments(
     lines: BuybackPaymentLineDto[],
     payableAmount: Decimal,

@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const audit_service_1 = require("../../common/services/audit.service");
+const history_range_service_1 = require("../../common/services/history-range.service");
 const approval_service_1 = require("../../common/services/approval.service");
 const business_day_service_1 = require("../../common/services/business-day.service");
 const stock_ledger_service_1 = require("../../common/services/stock-ledger.service");
@@ -43,7 +44,8 @@ let ExchangeService = class ExchangeService {
     stockLedger;
     notifications;
     pricingContext;
-    constructor(prisma, audit, approval, businessDay, stockLedger, notifications, pricingContext) {
+    range;
+    constructor(prisma, audit, approval, businessDay, stockLedger, notifications, pricingContext, range) {
         this.prisma = prisma;
         this.audit = audit;
         this.approval = approval;
@@ -51,6 +53,7 @@ let ExchangeService = class ExchangeService {
         this.stockLedger = stockLedger;
         this.notifications = notifications;
         this.pricingContext = pricingContext;
+        this.range = range;
     }
     /**
      * Price each old line at ລາຄາຊື້ຄືນໜ້າຮ້ານ and assemble the domain input.
@@ -374,9 +377,16 @@ let ExchangeService = class ExchangeService {
             return updated;
         });
     }
-    async list(status) {
+    async list(status, query, user) {
+        const range = this.range.resolve(query, user);
+        const where = {
+            deletedAt: null,
+            createdAt: history_range_service_1.HistoryRangeService.window(range),
+            ...(status ? { status } : {}),
+        };
+        const total = await this.prisma.goldExchange.count({ where });
         const rows = await this.prisma.goldExchange.findMany({
-            where: { deletedAt: null, ...(status ? { status } : {}) },
+            where,
             include: {
                 customer: true,
                 oldLines: { include: { goldType: true } },
@@ -385,10 +395,11 @@ let ExchangeService = class ExchangeService {
                 payments: { include: { bankAccount: true } },
             },
             orderBy: { createdAt: 'desc' },
-            take: 200,
+            skip: range.skip,
+            take: range.take,
         });
         // TOR History tables carry UPDATED BY.
-        return this.audit.withActorNames(rows);
+        return this.range.page(await this.audit.withActorNames(rows), total, range);
     }
     /**
      * One payment leg, converted to LAK at the BUYBACK rate (the shop is paying
@@ -428,6 +439,7 @@ exports.ExchangeService = ExchangeService = __decorate([
         business_day_service_1.BusinessDayService,
         stock_ledger_service_1.StockLedgerService,
         notifications_service_1.NotificationsService,
-        pricing_context_service_1.PricingContextService])
+        pricing_context_service_1.PricingContextService,
+        history_range_service_1.HistoryRangeService])
 ], ExchangeService);
 //# sourceMappingURL=exchange.service.js.map

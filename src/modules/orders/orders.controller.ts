@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import type { OrderStatus } from '@prisma/client';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, OrderReceiptDto, UpdateOrderStatusDto } from './dto/order.dto';
+import { CreateOrderDto, ReceiveOrderDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
 @ApiTags('orders')
 @ApiBearerAuth('bearer')
@@ -12,9 +13,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
+  // The date range defaults to today and a Valuer cannot widen it —
+  // HistoryRangeService enforces that, not the client.
   @Get()
-  list(@Query('status') status?: OrderStatus) {
-    return this.orders.list(status);
+  list(
+    @Query() query: HistoryRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('status') status?: OrderStatus,
+  ) {
+    return this.orders.list(status, query, user);
   }
 
   @Roles('FINANCIAL_CONTROLLER', 'ADMIN', 'MANAGER')
@@ -38,7 +45,7 @@ export class OrdersController {
   @Post(':id/receipts')
   addReceipt(
     @Param('id') id: string,
-    @Body() dto: OrderReceiptDto,
+    @Body() dto: ReceiveOrderDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.orders.addReceipt(id, dto, user);

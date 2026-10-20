@@ -20,10 +20,14 @@ const catalog_dto_1 = require("./dto/catalog.dto");
 const roles_decorator_1 = require("../../common/decorators/roles.decorator");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const swagger_1 = require("@nestjs/swagger");
+const history_range_dto_1 = require("../../common/dto/history-range.dto");
+const history_range_service_1 = require("../../common/services/history-range.service");
 let CatalogController = class CatalogController {
     catalog;
-    constructor(catalog) {
+    range;
+    constructor(catalog, range) {
         this.catalog = catalog;
+        this.range = range;
     }
     goldTypes(stockOnly) {
         return this.catalog.listGoldTypes(stockOnly === 'true');
@@ -31,26 +35,56 @@ let CatalogController = class CatalogController {
     createGoldType(dto, user) {
         return this.catalog.createGoldType(dto, user.id);
     }
+    updateGoldType(id, dto, user) {
+        return this.catalog.updateGoldType(id, dto, user.id);
+    }
+    deleteGoldType(id, user) {
+        return this.catalog.deleteGoldType(id, user.id);
+    }
     goldItems() {
         return this.catalog.listGoldItems();
     }
     createGoldItem(dto, user) {
         return this.catalog.createGoldItem(dto, user.id);
     }
+    updateGoldItem(id, dto, user) {
+        return this.catalog.updateGoldItem(id, dto, user.id);
+    }
+    deleteGoldItem(id, user) {
+        return this.catalog.deleteGoldItem(id, user.id);
+    }
     cabinets() {
         return this.catalog.listCabinets();
     }
-    cabinet(id) {
-        return this.catalog.cabinetContents(id);
+    // ບໍ່ສົ່ງວັນທີມາ = ເຫັນຄຳທັງໝົດໃນຕູ້ (ຕູ້ເປັນຍອດຄົງຄ້າງ ບໍ່ແມ່ນປະຫວັດ);
+    // ສົ່ງ from_date / to_date ມາ = ເບິ່ງສະເພາະຄຳທີ່ເຂົ້າຕູ້ໃນຊ່ວງນັ້ນ.
+    cabinet(id, query, user) {
+        const asked = query.from_date ?? query.fromDate ?? query.to_date ?? query.toDate;
+        if (!asked)
+            return this.catalog.cabinetContents(id);
+        const range = this.range.resolve(query, user);
+        return this.catalog.cabinetContents(id, history_range_service_1.HistoryRangeService.window(range));
     }
     createCabinet(dto, user) {
         return this.catalog.createCabinet(dto, user.id);
+    }
+    updateCabinet(id, dto, user) {
+        return this.catalog.updateCabinet(id, dto, user.id);
+    }
+    deleteCabinet(id, user) {
+        return this.catalog.deleteCabinet(id, user.id);
     }
     partners(direction) {
         return this.catalog.listPartners(direction);
     }
     createPartner(dto, user) {
         return this.catalog.createPartner(dto, user.id);
+    }
+    updatePartner(id, dto, user) {
+        return this.catalog.updatePartner(id, dto, user.id);
+    }
+    deletePartner(id, user) {
+        return this.catalog.deletePartner(id, user.id);
     }
     bankAccounts() {
         return this.catalog.listBankAccounts();
@@ -77,6 +111,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "createGoldType", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Patch)('gold-types/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, catalog_dto_1.UpdateGoldTypeDto, Object]),
+    __metadata("design:returntype", void 0)
+], CatalogController.prototype, "updateGoldType", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Delete)('gold-types/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], CatalogController.prototype, "deleteGoldType", null);
+__decorate([
     (0, common_1.Get)('gold-items'),
     openapi.ApiResponse({ status: 200, type: Object }),
     __metadata("design:type", Function),
@@ -94,6 +149,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "createGoldItem", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Patch)('gold-items/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, catalog_dto_1.UpdateGoldItemDto, Object]),
+    __metadata("design:returntype", void 0)
+], CatalogController.prototype, "updateGoldItem", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Delete)('gold-items/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], CatalogController.prototype, "deleteGoldItem", null);
+__decorate([
     (0, common_1.Get)('cabinets'),
     openapi.ApiResponse({ status: 200, type: Object }),
     __metadata("design:type", Function),
@@ -104,8 +180,10 @@ __decorate([
     (0, common_1.Get)('cabinets/:id'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Query)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, history_range_dto_1.HistoryRangeDto, Object]),
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "cabinet", null);
 __decorate([
@@ -118,6 +196,27 @@ __decorate([
     __metadata("design:paramtypes", [catalog_dto_1.CreateCabinetDto, Object]),
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "createCabinet", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Patch)('cabinets/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, catalog_dto_1.UpdateCabinetDto, Object]),
+    __metadata("design:returntype", void 0)
+], CatalogController.prototype, "updateCabinet", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Delete)('cabinets/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], CatalogController.prototype, "deleteCabinet", null);
 __decorate([
     openapi.ApiQuery({ name: "direction", required: false }),
     (0, common_1.Get)('partners'),
@@ -138,6 +237,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "createPartner", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Patch)('partners/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, catalog_dto_1.UpdatePartnerDto, Object]),
+    __metadata("design:returntype", void 0)
+], CatalogController.prototype, "updatePartner", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Delete)('partners/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], CatalogController.prototype, "deletePartner", null);
+__decorate([
     (0, common_1.Get)('bank-accounts'),
     openapi.ApiResponse({ status: 200, type: Object }),
     __metadata("design:type", Function),
@@ -148,6 +268,7 @@ exports.CatalogController = CatalogController = __decorate([
     (0, swagger_1.ApiTags)('catalog'),
     (0, swagger_1.ApiBearerAuth)('bearer'),
     (0, common_1.Controller)('catalog'),
-    __metadata("design:paramtypes", [catalog_service_1.CatalogService])
+    __metadata("design:paramtypes", [catalog_service_1.CatalogService,
+        history_range_service_1.HistoryRangeService])
 ], CatalogController);
 //# sourceMappingURL=catalog.controller.js.map

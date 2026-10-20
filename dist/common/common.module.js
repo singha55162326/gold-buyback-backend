@@ -14,14 +14,34 @@ const business_day_service_1 = require("./services/business-day.service");
 const stock_ledger_service_1 = require("./services/stock-ledger.service");
 const apar_posting_service_1 = require("./services/apar-posting.service");
 const advance_service_1 = require("./services/advance.service");
+const history_range_service_1 = require("./services/history-range.service");
+const code_generator_service_1 = require("./services/code-generator.service");
 let CommonModule = class CommonModule {
 };
 exports.CommonModule = CommonModule;
 exports.CommonModule = CommonModule = __decorate([
     (0, common_1.Global)(),
     (0, common_1.Module)({
-        providers: [approval_service_1.ApprovalService, audit_service_1.AuditService, business_day_service_1.BusinessDayService, stock_ledger_service_1.StockLedgerService, apar_posting_service_1.ApArPostingService, advance_service_1.AdvanceService],
-        exports: [approval_service_1.ApprovalService, audit_service_1.AuditService, business_day_service_1.BusinessDayService, stock_ledger_service_1.StockLedgerService, apar_posting_service_1.ApArPostingService, advance_service_1.AdvanceService],
+        providers: [
+            approval_service_1.ApprovalService,
+            audit_service_1.AuditService,
+            business_day_service_1.BusinessDayService,
+            stock_ledger_service_1.StockLedgerService,
+            apar_posting_service_1.ApArPostingService,
+            advance_service_1.AdvanceService,
+            history_range_service_1.HistoryRangeService,
+            code_generator_service_1.CodeGeneratorService,
+        ],
+        exports: [
+            approval_service_1.ApprovalService,
+            audit_service_1.AuditService,
+            business_day_service_1.BusinessDayService,
+            stock_ledger_service_1.StockLedgerService,
+            apar_posting_service_1.ApArPostingService,
+            advance_service_1.AdvanceService,
+            history_range_service_1.HistoryRangeService,
+            code_generator_service_1.CodeGeneratorService,
+        ],
     })
 ], CommonModule);
 //# sourceMappingURL=common.module.js.map

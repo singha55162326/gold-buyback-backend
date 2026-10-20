@@ -1,5 +1,6 @@
 import {
   ArrayMinSize,
+  IsBoolean,
   IsArray,
   IsIn,
   IsInt,
@@ -16,24 +17,55 @@ import { Type } from 'class-transformer';
 
 /** §3.7 — Module ລາຍການ Bank */
 export class CreateBankAccountDto {
-  @IsString() @MinLength(2) @MaxLength(40) code: string;
+  /** Ignored — the code is issued by CodeGeneratorService. */
+  @IsOptional() @IsString() @MaxLength(40) code?: string;
   @IsString() @MinLength(1) @MaxLength(80) nameLo: string;
+}
+
+export class UpdateBankAccountDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(80) nameLo?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
 }
 
 /** §3.7 — Module ເພີ້ມລາຍການຮັບຈ່າຍ */
 export class CreateIncomeExpenseCategoryDto {
-  @IsString() @MinLength(2) @MaxLength(40) code: string;
+  /** Ignored — the code is issued by CodeGeneratorService. */
+  @IsOptional() @IsString() @MaxLength(40) code?: string;
   @IsString() @MinLength(1) @MaxLength(80) nameLo: string;
   @IsIn(['INCOME', 'EXPENSE']) kind: 'INCOME' | 'EXPENSE';
 }
 
+export class UpdateIncomeExpenseCategoryDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(80) nameLo?: string;
+  @IsOptional() @IsIn(['INCOME', 'EXPENSE']) kind?: 'INCOME' | 'EXPENSE';
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
 /** §3.7 — Module ຈັດການລາຍຮັບລາຍຈ່າຍ */
-export class CreateIncomeExpenseDto {
-  @IsString() categoryId: string;
+/** One leg of a ລາຍຮັບ / ລາຍຈ່າຍ — ສົດ or ໂອນ, in one currency. */
+export class IncomeExpenseLineDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
   @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
+}
+
+export class CreateIncomeExpenseDto {
+  @IsString() categoryId: string;
+
+  /** Single-leg form, kept so an older client still works. */
+  @IsOptional() @IsIn(['CASH', 'BANK']) method?: 'CASH' | 'BANK';
+  @IsOptional() @IsString() bankAccountId?: string;
+  @IsOptional() @IsIn(['LAK', 'THB', 'USD']) currency?: 'LAK' | 'THB' | 'USD';
+  @IsOptional() @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount?: string;
+
+  /** Multi-leg form: one transaction paid part ສົດ, part ໂອນ. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => IncomeExpenseLineDto)
+  payments?: IncomeExpenseLineDto[];
+
   @IsOptional() @IsString() note?: string;
 }
 
@@ -65,10 +97,21 @@ export class CreateConsignmentDto {
 
 /** §9.1 — Module ລາຍການ AP-AR (Cash) */
 export class CreateApArCashCategoryDto {
-  @IsString() @MinLength(2) @MaxLength(40) code: string;
+  /** Ignored — the code is issued by CodeGeneratorService. */
+  @IsOptional() @IsString() @MaxLength(40) code?: string;
   @IsString() @MinLength(1) @MaxLength(80) nameLo: string;
-  /** Omit to allow the category on both sides. */
-  @IsOptional() @IsIn(['AP', 'AR']) side?: 'AP' | 'AR';
+  /**
+   * Omit — or send 'AP_AR' — to allow the category on both sides. That is
+   * the ດ້ານ = 'AP-AR' option the client asked for; it is stored as NULL,
+   * which is what every reader already treats as "either side".
+   */
+  @IsOptional() @IsIn(['AP', 'AR', 'AP_AR']) side?: 'AP' | 'AR' | 'AP_AR';
+}
+
+export class UpdateApArCashCategoryDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(80) nameLo?: string;
+  @IsOptional() @IsIn(['AP', 'AR', 'AP_AR']) side?: 'AP' | 'AR' | 'AP_AR';
+  @IsOptional() @IsBoolean() isActive?: boolean;
 }
 
 /** §9.3 / §9.4 — +Add AP Cash / +Add AR Cash */

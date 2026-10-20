@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ReviewCreditDto = exports.CreateCreditDto = exports.CreditReceiptDto = void 0;
+exports.ReceiveCreditDto = exports.ReviewCreditDto = exports.CreateCreditDto = exports.ReceiptLinesDto = exports.CreditReceiptDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
@@ -40,6 +40,25 @@ __decorate([
     (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
     __metadata("design:type", String)
 ], CreditReceiptDto.prototype, "amount", void 0);
+/**
+ * One payment leg. A single transaction may mix ສົດ and ໂອນ across several
+ * currencies, so these arrive as a list and the shop's money moves once per
+ * leg rather than once per transaction.
+ */
+class ReceiptLinesDto {
+    receipts;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { receipts: { required: true, type: () => [require("./credit.dto").CreditReceiptDto], minItems: 1 } };
+    }
+}
+exports.ReceiptLinesDto = ReceiptLinesDto;
+__decorate([
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMinSize)(1, { message: 'ຕ້ອງມີລາຍການຮັບເງິນຢ່າງໜ້ອຍ 1 ລາຍການ' }),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => CreditReceiptDto),
+    __metadata("design:type", Array)
+], ReceiptLinesDto.prototype, "receipts", void 0);
 class CreateCreditDto {
     phone;
     goldItemId;
@@ -49,8 +68,9 @@ class CreateCreditDto {
     sellPrice;
     downPayment;
     receipt;
+    receipts;
     static _OPENAPI_METADATA_FACTORY() {
-        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, goldItemId: { required: true, type: () => String }, cabinetId: { required: false, type: () => String }, weightG: { required: true, type: () => String }, quantity: { required: true, type: () => Number, minimum: 1 }, sellPrice: { required: true, type: () => String }, downPayment: { required: true, type: () => String }, receipt: { required: true, type: () => require("./credit.dto").CreditReceiptDto } };
+        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, goldItemId: { required: true, type: () => String }, cabinetId: { required: false, type: () => String }, weightG: { required: true, type: () => String }, quantity: { required: true, type: () => Number, minimum: 1 }, sellPrice: { required: true, type: () => String }, downPayment: { required: true, type: () => String }, receipt: { required: false, type: () => require("./credit.dto").CreditReceiptDto }, receipts: { required: false, type: () => [require("./credit.dto").CreditReceiptDto] } };
     }
 }
 exports.CreateCreditDto = CreateCreditDto;
@@ -85,10 +105,21 @@ __decorate([
     __metadata("design:type", String)
 ], CreateCreditDto.prototype, "downPayment", void 0);
 __decorate([
+    (0, class_validator_1.ValidateNested)()
+    /** Superseded by `receipts`; accepted so an older client still works. */
+    ,
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.ValidateNested)(),
     (0, class_transformer_1.Type)(() => CreditReceiptDto),
     __metadata("design:type", CreditReceiptDto)
 ], CreateCreditDto.prototype, "receipt", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => CreditReceiptDto),
+    __metadata("design:type", Array)
+], CreateCreditDto.prototype, "receipts", void 0);
 class ReviewCreditDto {
     decision;
     reason;
@@ -106,4 +137,44 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], ReviewCreditDto.prototype, "reason", void 0);
+class ReceiveCreditDto {
+    /** Single-leg form, kept so an older client still works. */
+    method;
+    bankAccountId;
+    currency;
+    amount;
+    /** Multi-leg form: ສົດ and ໂອນ, several currencies, one receipt. */
+    receipts;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { method: { required: false, description: "Single-leg form, kept so an older client still works.", enum: ["CASH", "BANK"], enum: ['CASH', 'BANK'] }, bankAccountId: { required: false, type: () => String }, currency: { required: false, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: false, type: () => String }, receipts: { required: false, type: () => [require("./credit.dto").CreditReceiptDto], description: "Multi-leg form: \u0EAA\u0EBB\u0E94 and \u0EC2\u0EAD\u0E99, several currencies, one receipt." } };
+    }
+}
+exports.ReceiveCreditDto = ReceiveCreditDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['CASH', 'BANK']),
+    __metadata("design:type", String)
+], ReceiveCreditDto.prototype, "method", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], ReceiveCreditDto.prototype, "bankAccountId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['LAK', 'THB', 'USD']),
+    __metadata("design:type", String)
+], ReceiveCreditDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumberString)(),
+    __metadata("design:type", String)
+], ReceiveCreditDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => CreditReceiptDto),
+    __metadata("design:type", Array)
+], ReceiveCreditDto.prototype, "receipts", void 0);
 //# sourceMappingURL=credit.dto.js.map

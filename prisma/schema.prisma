@@ -654,6 +654,7 @@ model BusinessDay {
   cashApArOpenings  CashApArOpening[]
   wacSnapshots      WacSnapshot[]
   incomeExpenses    IncomeExpenseTransaction[]
+  goldHandovers     GoldHandover[]
 
   @@index([date])
   @@map("business_days")
@@ -727,6 +728,7 @@ model CashTransaction {
 
   @@index([businessDayId, currency])
   @@index([refType, refId])
+  @@index([createdAt])
   @@map("cash_transactions")
 }
 
@@ -749,6 +751,7 @@ model BankTransaction {
   bankAccount BankAccount @relation(fields: [bankAccountId], references: [id])
 
   @@index([businessDayId, bankAccountId])
+  @@index([createdAt])
   @@map("bank_transactions")
 }
 
@@ -870,8 +873,11 @@ model Buyback {
   goldType GoldType         @relation(fields: [goldTypeId], references: [id])
   goldItem GoldItem?        @relation(fields: [goldItemId], references: [id])
   payments BuybackPayment[]
+  /// ມີແຖວນີ້ = ລາຍການນີ້ຖືກມອບເຂົ້າສາງແລ້ວ (ຄຳຕົ້ມ).
+  handoverItem GoldHandoverItem?
 
   @@index([status, createdAt])
+  @@index([createdAt])
   @@map("buybacks")
 }
 
@@ -938,6 +944,7 @@ model GoldExchange {
   payments       ExchangePayment[]
 
   @@index([status, createdAt])
+  @@index([createdAt])
   @@map("gold_exchanges")
 }
 
@@ -1034,6 +1041,7 @@ model GoldCredit {
   receipts CreditReceipt[]
 
   @@index([status, createdAt])
+  @@index([createdAt])
   @@map("gold_credits")
 }
 
@@ -1108,6 +1116,7 @@ model Order {
 
   @@index([status, createdAt])
   @@index([billNo])
+  @@index([createdAt])
   @@map("orders")
 }
 
@@ -1208,11 +1217,19 @@ model StockMovement {
 
 /// One line of a movement. Stock NEW lines reference a SKU; Stock OLD lines
 /// reference a ປະເພດຄຳ. A TRANSFER carries both sides.
+/// ໝວດຄຳເກົ່າ — ຮູບປະພັນ ຫຼື ແທ່ງ (Stock OLD IN).
+enum OldGoldCategory {
+  JEWELRY
+  BAR
+}
+
 model StockMovementLine {
   id         String  @id @default(cuid())
   movementId String
   goldSkuId  String?
   goldTypeId String?
+  /// ໝວດ (ຮູບປະພັນ / ແທ່ງ) — ຖາມສະເພາະ Stock OLD IN.
+  oldCategory OldGoldCategory?
   weightG    Decimal @db.Decimal(18, 4)
   quantity   Int     @default(1)
   /// GOLD (g) = weight_g * ຈຳນວນ
@@ -1256,6 +1273,7 @@ model StockNewLedger {
 
   @@unique([businessDate, sequence])
   @@index([createdAt])
+  @@index([businessDate])
   @@map("stock_new_ledger")
 }
 
@@ -1304,6 +1322,7 @@ model StockOldLedger {
 
   @@unique([businessDate, sequence])
   @@index([goldTypeId, createdAt])
+  @@index([businessDate])
   @@map("stock_old_ledger")
 }
 
@@ -1333,26 +1352,63 @@ model StockOldTypeBalance {
 
 /// ມອບຄຳລະຫວ່າງມື້ — Payment hands old gold to the Warehouse mid-day (§4.3).
 model GoldHandover {
-  id           String         @id @default(cuid())
-  code         String         @unique
-  shiftId      String
-  goldTypeId   String
-  weightG      Decimal        @db.Decimal(18, 4)
-  note         String?
-  status       ApprovalStatus @default(PENDING)
-  createdById  String
-  approvedById String?
-  approvedAt   DateTime?
-  rejectReason String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  deletedAt    DateTime?
+  id            String         @id @default(cuid())
+  code          String         @unique
+  shiftId       String
+  businessDayId String
+  goldTypeId    String
+  /// ຮອບທີ — ໄລ່ຕໍ່ມື້ການຄ້າ ສຳລັບ ຄຳດີ/ຄຳຫຍຸບ/ແທ່ງ. ຄຳຕົ້ມ ບໍ່ໄລ່ເປັນຮອບ => null.
+  roundNo       Int?
+  /// ນ້ຳໜັກທີ່ມອບຈິງ: ຄຳດີ/ຫຍຸບ/ແທ່ງ = ນ້ຳໜັກອອກ, ຄຳຕົ້ມ = ລວມນ້ຳໜັກລາຍການທີ່ເລືອກ.
+  weightG       Decimal        @db.Decimal(18, 4)
+  /// ນ້ຳໜັກອອກ (ຄຳດີ/ຫຍຸບ/ແທ່ງ ເທົ່ານັ້ນ).
+  grossWeightG  Decimal?       @db.Decimal(18, 4)
+  /// ເນື້ອລ້ວນ.
+  pureWeightG   Decimal?       @db.Decimal(18, 4)
+  /// ມີແກ້ວ.
+  glassWeightG  Decimal?       @db.Decimal(18, 4)
+  /// ຂາດດຸ = ນ້ຳໜັກອອກ − (ເນື້ອລ້ວນ + ມີແກ້ວ) — ຄຳນວນຢູ່ server.
+  shortfallG    Decimal?       @db.Decimal(18, 4)
+  note          String?
+  status        ApprovalStatus @default(PENDING)
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  rejectReason  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
 
-  shift    Shift    @relation(fields: [shiftId], references: [id])
-  goldType GoldType @relation(fields: [goldTypeId], references: [id])
+  shift       Shift              @relation(fields: [shiftId], references: [id])
+  businessDay BusinessDay        @relation(fields: [businessDayId], references: [id])
+  goldType    GoldType           @relation(fields: [goldTypeId], references: [id])
+  items       GoldHandoverItem[]
 
+  /// ຮອບຊ້ຳກັນໃນມື້ດຽວບໍ່ໄດ້ — ສອງຄົນກົດພ້ອມກັນຈະລົ້ມແຖວໜຶ່ງ ບໍ່ແມ່ນອອກຮອບຊ້ຳ.
+  @@unique([businessDayId, roundNo])
   @@index([status])
+  @@index([createdAt])
   @@map("gold_handovers")
+}
+
+/// ລາຍການຄຳເກົ່າ (Buyback ຄຳຕົ້ມ) ທີ່ຖືກມອບໃນຮອບນັ້ນ.
+/// buybackId ເປັນ unique: ລາຍການໜຶ່ງມອບໄດ້ຄັ້ງດຽວ, ສະນັ້ນ "ຍັງບໍ່ໄດ້ມອບ"
+/// ອ່ານໄດ້ຈາກການບໍ່ມີແຖວນີ້ ບໍ່ຕ້ອງມີ flag ແຍກທີ່ອາດຄ້າງ.
+model GoldHandoverItem {
+  id          String   @id @default(cuid())
+  handoverId  String
+  buybackId   String   @unique
+  weightG     Decimal  @db.Decimal(18, 4)
+  quantity    Int
+  goldPercent Decimal? @db.Decimal(18, 4)
+  payableAmount Decimal @db.Decimal(18, 4)
+  createdAt   DateTime @default(now())
+
+  handover GoldHandover @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+  buyback  Buyback      @relation(fields: [buybackId], references: [id])
+
+  @@index([handoverId])
+  @@map("gold_handover_items")
 }
 
 // ---------------------------------------------------------------------------
@@ -1381,6 +1437,7 @@ model FactoryOutTracking {
   partner  PartnerSource @relation(fields: [partnerId], references: [id])
 
   @@index([status])
+  @@index([createdAt])
   @@map("factory_out_tracking")
 }
 
@@ -1447,6 +1504,7 @@ model GoldApArLedger {
 
   @@unique([partnerId, side, businessDate, sequence])
   @@index([side, businessDate])
+  @@index([businessDate])
   @@map("gold_ap_ar_ledger")
 }
 
@@ -1507,6 +1565,7 @@ model CashApArLedger {
   @@unique([side, currency, businessDate, sequence])
   @@index([refType, refId])
   @@index([partnerId, side])
+  @@index([businessDate])
   @@map("cash_ap_ar_ledger")
 }
 
@@ -1605,6 +1664,7 @@ model IncomeExpenseTransaction {
   bankAccount BankAccount?          @relation(fields: [bankAccountId], references: [id])
 
   @@index([businessDayId, kind])
+  @@index([createdAt])
   @@map("income_expense_transactions")
 }
 
@@ -1642,6 +1702,7 @@ model Consignment {
 
   @@index([status, createdAt])
   @@index([billId])
+  @@index([createdAt])
   @@map("consignments")
 }
 
@@ -1746,4 +1807,18 @@ model ExchangePayment {
 
   @@index([exchangeId])
   @@map("exchange_payments")
+}
+
+/// Counter behind the auto-generated codes (ລະຫັດອັດຕະໂນມັດ).
+///
+/// One row per code family. It exists so the number comes from the database
+/// rather than from `count() + 1`, which hands the same code to two cashiers
+/// who press Save in the same second.
+model CodeSequence {
+  /// The code family: GOLD_TYPE, GOLD_ITEM, BANK, CABINET, ...
+  scope     String   @id
+  next      Int      @default(1)
+  updatedAt DateTime @updatedAt
+
+  @@map("code_sequences")
 }

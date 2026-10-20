@@ -37,6 +37,14 @@ let PricingController = class PricingController {
     preview(dto) {
         return this.pricing.preview(dto.price1Baht);
     }
+    /**
+     * Refresh — recompute every price from the current gold price and the
+     * current deduction rules, and save. Nothing is typed, so nothing is
+     * mistyped.
+     */
+    recalculate(user) {
+        return this.pricing.recalculate(user.id);
+    }
     /** Set Pricing (TOR §3.1) — ADMIN/MANAGER only. */
     set(dto, user) {
         return this.pricing.setPricing(dto, user.id);
@@ -70,6 +78,16 @@ __decorate([
     __metadata("design:paramtypes", [set_pricing_dto_1.PreviewPricingDto]),
     __metadata("design:returntype", void 0)
 ], PricingController.prototype, "preview", null);
+__decorate([
+    openapi.ApiOperation({ summary: "Refresh \u2014 recompute every price from the current gold price and the\ncurrent deduction rules, and save. Nothing is typed, so nothing is\nmistyped." }),
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Post)('recalculate'),
+    openapi.ApiResponse({ status: 201 }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], PricingController.prototype, "recalculate", null);
 __decorate([
     openapi.ApiOperation({ summary: "Set Pricing (TOR \u00A73.1) \u2014 ADMIN/MANAGER only." }),
     (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),

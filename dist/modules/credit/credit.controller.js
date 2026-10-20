@@ -21,13 +21,16 @@ const roles_decorator_1 = require("../../common/decorators/roles.decorator");
 const requires_shift_decorator_1 = require("../../common/decorators/requires-shift.decorator");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const swagger_1 = require("@nestjs/swagger");
+const history_range_dto_1 = require("../../common/dto/history-range.dto");
 let CreditController = class CreditController {
     credit;
     constructor(credit) {
         this.credit = credit;
     }
-    list(status) {
-        return this.credit.list(status);
+    // The date range defaults to today and a Valuer cannot widen it —
+    // HistoryRangeService enforces that, not the client.
+    list(query, user, status) {
+        return this.credit.list(status, query, user);
     }
     create(dto, user, req) {
         const shiftId = req.shift?.id;
@@ -47,10 +50,12 @@ exports.CreditController = CreditController;
 __decorate([
     openapi.ApiQuery({ name: "status", required: false }),
     (0, common_1.Get)(),
-    openapi.ApiResponse({ status: 200, type: [Object] }),
-    __param(0, (0, common_1.Query)('status')),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('status')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
     __metadata("design:returntype", void 0)
 ], CreditController.prototype, "list", null);
 __decorate([
@@ -85,7 +90,7 @@ __decorate([
     __param(1, (0, common_1.Body)()),
     __param(2, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, credit_dto_1.CreditReceiptDto, Object]),
+    __metadata("design:paramtypes", [String, credit_dto_1.ReceiveCreditDto, Object]),
     __metadata("design:returntype", void 0)
 ], CreditController.prototype, "addReceipt", null);
 exports.CreditController = CreditController = __decorate([

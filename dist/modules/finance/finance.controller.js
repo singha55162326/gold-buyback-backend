@@ -21,6 +21,7 @@ const finance_dto_1 = require("./dto/finance.dto");
 const roles_decorator_1 = require("../../common/decorators/roles.decorator");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const swagger_1 = require("@nestjs/swagger");
+const history_range_dto_1 = require("../../common/dto/history-range.dto");
 /** The §3.7 and §9 modules added by the updated TOR, plus Module Advace (§7). */
 let FinanceController = class FinanceController {
     finance;
@@ -33,6 +34,12 @@ let FinanceController = class FinanceController {
     createBank(dto, user) {
         return this.finance.createBankAccount(dto, user);
     }
+    updateBankAccount(id, dto, user) {
+        return this.finance.updateBankAccount(id, dto, user);
+    }
+    deleteBankAccount(id, user) {
+        return this.finance.deleteBankAccount(id, user);
+    }
     /* ---- §3.7 ລາຍຮັບ / ລາຍຈ່າຍ ---- */
     categories(kind) {
         return this.finance.listIncomeExpenseCategories(kind);
@@ -40,15 +47,21 @@ let FinanceController = class FinanceController {
     createCategory(dto, user) {
         return this.finance.createIncomeExpenseCategory(dto, user);
     }
-    incomeExpenseHistory(kind) {
-        return this.finance.incomeExpenseHistory(kind);
+    updateIncomeExpenseCategory(id, dto, user) {
+        return this.finance.updateIncomeExpenseCategory(id, dto, user);
+    }
+    deleteIncomeExpenseCategory(id, user) {
+        return this.finance.deleteIncomeExpenseCategory(id, user);
+    }
+    incomeExpenseHistory(query, user, kind) {
+        return this.finance.incomeExpenseHistory(kind, query, user);
     }
     createIncomeExpense(dto, user) {
         return this.finance.createIncomeExpense(dto, user);
     }
     /* ---- §3.7 ຝາກສິນຄ້າ ---- */
-    consignments(status) {
-        return this.finance.consignments(status);
+    consignments(query, user, status) {
+        return this.finance.consignments(status, query, user);
     }
     createConsignment(dto, user) {
         return this.finance.createConsignment(dto, user);
@@ -61,8 +74,8 @@ let FinanceController = class FinanceController {
     advanceSummary() {
         return this.advance.summary();
     }
-    advanceHistory() {
-        return this.advance.history();
+    advanceHistory(query, user) {
+        return this.advance.history(query, user);
     }
     /* ---- §9.1 ລາຍການ AP-AR (Cash) ---- */
     apArCategories(side) {
@@ -71,6 +84,12 @@ let FinanceController = class FinanceController {
     createApArCategory(dto, user) {
         return this.finance.createApArCategory(dto, user);
     }
+    updateApArCategory(id, dto, user) {
+        return this.finance.updateApArCategory(id, dto, user);
+    }
+    deleteApArCategory(id, user) {
+        return this.finance.deleteApArCategory(id, user);
+    }
     /* ---- §9.3 / §9.4 AP (Cash) ແລະ AR (Cash) ---- */
     totals(side) {
         return this.finance.apArTotals(side);
@@ -78,8 +97,8 @@ let FinanceController = class FinanceController {
     byPartner(side) {
         return this.finance.apArByPartner(side);
     }
-    history(side) {
-        return this.finance.apArHistory(side);
+    history(side, query, user) {
+        return this.finance.apArHistory(side, query, user);
     }
     addEntry(side, dto, user) {
         return this.finance.addApArEntry(side, dto, user);
@@ -101,6 +120,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "createBank", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Patch)('banks/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, finance_dto_1.UpdateBankAccountDto, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "updateBankAccount", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Delete)('banks/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "deleteBankAccount", null);
+__decorate([
     openapi.ApiQuery({ name: "kind", required: false }),
     (0, common_1.Get)('income-expense/categories'),
     openapi.ApiResponse({ status: 200, type: Object }),
@@ -110,7 +150,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "categories", null);
 __decorate([
-    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER'),
     (0, common_1.Post)('income-expense/categories'),
     openapi.ApiResponse({ status: 201 }),
     __param(0, (0, common_1.Body)()),
@@ -120,12 +160,35 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "createCategory", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER'),
+    (0, common_1.Patch)('income-expense/categories/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, finance_dto_1.UpdateIncomeExpenseCategoryDto, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "updateIncomeExpenseCategory", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER'),
+    (0, common_1.Delete)('income-expense/categories/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "deleteIncomeExpenseCategory", null);
+__decorate([
     openapi.ApiQuery({ name: "kind", required: false }),
     (0, common_1.Get)('income-expense'),
-    openapi.ApiResponse({ status: 200, type: Object }),
-    __param(0, (0, common_1.Query)('kind')),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('kind')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "incomeExpenseHistory", null);
 __decorate([
@@ -142,9 +205,11 @@ __decorate([
     openapi.ApiQuery({ name: "status", required: false }),
     (0, common_1.Get)('consignments'),
     openapi.ApiResponse({ status: 200 }),
-    __param(0, (0, common_1.Query)('status')),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('status')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "consignments", null);
 __decorate([
@@ -177,9 +242,11 @@ __decorate([
 ], FinanceController.prototype, "advanceSummary", null);
 __decorate([
     (0, common_1.Get)('advance/history'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "advanceHistory", null);
 __decorate([
@@ -202,6 +269,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "createApArCategory", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Patch)('ap-ar/categories/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, finance_dto_1.UpdateApArCashCategoryDto, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "updateApArCategory", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER'),
+    (0, common_1.Delete)('ap-ar/categories/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "deleteApArCategory", null);
+__decorate([
     openapi.ApiParam({ name: "side", enum: ["AP", "AR"] }),
     (0, common_1.Get)('ap-ar/:side/totals'),
     openapi.ApiResponse({ status: 200 }),
@@ -222,10 +310,12 @@ __decorate([
 __decorate([
     openapi.ApiParam({ name: "side", enum: ["AP", "AR"] }),
     (0, common_1.Get)('ap-ar/:side/history'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Param)('side')),
+    __param(1, (0, common_1.Query)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, history_range_dto_1.HistoryRangeDto, Object]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "history", null);
 __decorate([

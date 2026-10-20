@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const audit_service_1 = require("../../common/services/audit.service");
+const history_range_service_1 = require("../../common/services/history-range.service");
 const approval_service_1 = require("../../common/services/approval.service");
 const business_day_service_1 = require("../../common/services/business-day.service");
 const stock_ledger_service_1 = require("../../common/services/stock-ledger.service");
@@ -49,7 +50,8 @@ let BuybackService = class BuybackService {
     notifications;
     pricingContext;
     stockLedger;
-    constructor(prisma, audit, approval, businessDay, notifications, pricingContext, stockLedger) {
+    range;
+    constructor(prisma, audit, approval, businessDay, notifications, pricingContext, stockLedger, range) {
         this.prisma = prisma;
         this.audit = audit;
         this.approval = approval;
@@ -57,6 +59,7 @@ let BuybackService = class BuybackService {
         this.notifications = notifications;
         this.pricingContext = pricingContext;
         this.stockLedger = stockLedger;
+        this.range = range;
     }
     kindFor(code) {
         const kind = KIND_BY_CODE[code];
@@ -122,6 +125,10 @@ let BuybackService = class BuybackService {
         if (result.payableAmount.lte(0)) {
             throw new common_1.BadRequestException(`ຄິດໄລ່ລາຄາບໍ່ໄດ້ (${result.branch}) — ກະລຸນາກວດສອບນ້ຳໜັກ ແລະ ປະເພດຄຳ`);
         }
+        // ວິທີຈ່າຍ ສົດ / ໂອນ ແຍກກັນ — a ໂອນ leg has to name a real, open account
+        // before anything is written, because confirm books it against that
+        // account and has nowhere to put the payout otherwise.
+        await this.assertBankLegs(dto.payments);
         const payments = this.resolvePayments(dto.payments, result.payableAmount, context.rates);
         const customer = await this.prisma.customer.upsert({
             where: { phone: dto.phone },
@@ -267,7 +274,13 @@ let BuybackService = class BuybackService {
                         },
                     });
                 }
-                else if (payment.bankAccountId) {
+                else {
+                    // Checked at creation, re-checked here: a ໂອນ leg with no account
+                    // would otherwise take gold into stock without the money ever
+                    // leaving a bank balance.
+                    if (!payment.bankAccountId) {
+                        throw new common_1.BadRequestException(`ແຖວຈ່າຍແບບໂອນຂອງ ${buyback.code} ບໍ່ມີບັນຊີທະນາຄານ — ຢືນຢັນບໍ່ໄດ້`);
+                    }
                     await tx.bankTransaction.create({
                         data: {
                             businessDayId: day.id,
@@ -311,15 +324,32 @@ let BuybackService = class BuybackService {
             return updated;
         });
     }
-    async list(status) {
-        const rows = await this.prisma.buyback.findMany({
-            where: { deletedAt: null, ...(status ? { status } : {}) },
-            include: { customer: true, goldType: true, goldItem: true, payments: true },
-            orderBy: { createdAt: 'desc' },
-            take: 200,
-        });
+    async list(status, query, user) {
+        const range = this.range.resolve(query, user);
+        const where = {
+            deletedAt: null,
+            createdAt: history_range_service_1.HistoryRangeService.window(range),
+            ...(status ? { status } : {}),
+        };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.buyback.findMany({
+                where,
+                include: {
+                    customer: true,
+                    goldType: true,
+                    goldItem: true,
+                    // ແຖວໂອນ ຕ້ອງບອກໄດ້ວ່າ ເງິນອອກຈາກບັນຊີໃດ — ບໍ່ດັ່ງນັ້ນ ປະຫວັດຈະ
+                    // ແຍກ ສົດ/ໂອນ ບໍ່ອອກ.
+                    payments: { include: { bankAccount: { select: { nameLo: true } } } },
+                },
+                orderBy: { createdAt: 'desc' },
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.buyback.count({ where }),
+        ]);
         // TOR History tables carry UPDATED BY.
-        return this.audit.withActorNames(rows);
+        return this.range.page(await this.audit.withActorNames(rows), total, range);
     }
     /* ---------------------------------------------------------------- *
      * Helpers
@@ -330,6 +360,27 @@ let BuybackService = class BuybackService {
      *   CHANGE (LAK ONLY) = (Amount × Rate) − ລວມເງິນທີ່ຕ້ອງຈ່າຍ (LAK)
      *   Amount LAK ຕ້ອງ ≤ TOTAL(LAK) ຈຶ່ງບັນທຶກໄດ້
      */
+    /**
+     * ສົດ ແລະ ໂອນ ເປັນສອງເສັ້ນທາງແຍກກັນ: a ສົດ leg settles against the drawer
+     * of the open shift, a ໂອນ leg against one named bank account. One buyback
+     * may carry both, so each leg is checked on its own.
+     */
+    async assertBankLegs(lines) {
+        const bankLegs = lines.filter((line) => line.method === 'BANK');
+        if (bankLegs.length === 0)
+            return;
+        if (bankLegs.some((line) => !line.bankAccountId)) {
+            throw new common_1.BadRequestException('ການຈ່າຍແບບໂອນ ຕ້ອງເລືອກທະນາຄານ');
+        }
+        const ids = [...new Set(bankLegs.map((line) => line.bankAccountId))];
+        const open = await this.prisma.bankAccount.findMany({
+            where: { id: { in: ids }, isActive: true },
+            select: { id: true },
+        });
+        if (open.length !== ids.length) {
+            throw new common_1.BadRequestException('ບັນຊີທະນາຄານທີ່ເລືອກບໍ່ມີ ຫຼື ຖືກປິດໃຊ້ງານແລ້ວ');
+        }
+    }
     resolvePayments(lines, payableAmount, rates) {
         const resolved = lines.map((line) => {
             if (line.method === 'BANK' && !line.bankAccountId) {
@@ -373,6 +424,7 @@ exports.BuybackService = BuybackService = __decorate([
         business_day_service_1.BusinessDayService,
         notifications_service_1.NotificationsService,
         pricing_context_service_1.PricingContextService,
-        stock_ledger_service_1.StockLedgerService])
+        stock_ledger_service_1.StockLedgerService,
+        history_range_service_1.HistoryRangeService])
 ], BuybackService);
 //# sourceMappingURL=buyback.service.js.map

@@ -21,13 +21,14 @@ const roles_decorator_1 = require("../../common/decorators/roles.decorator");
 const requires_shift_decorator_1 = require("../../common/decorators/requires-shift.decorator");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const swagger_1 = require("@nestjs/swagger");
+const history_range_dto_1 = require("../../common/dto/history-range.dto");
 let ExchangeController = class ExchangeController {
     exchange;
     constructor(exchange) {
         this.exchange = exchange;
     }
-    list(status) {
-        return this.exchange.list(status);
+    list(query, user, status) {
+        return this.exchange.list(status, query, user);
     }
     /**
      * Live totals plus the §5.2 balance check — the form calls this on every
@@ -50,10 +51,12 @@ exports.ExchangeController = ExchangeController;
 __decorate([
     openapi.ApiQuery({ name: "status", required: false }),
     (0, common_1.Get)(),
-    openapi.ApiResponse({ status: 200, type: [Object] }),
-    __param(0, (0, common_1.Query)('status')),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('status')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
     __metadata("design:returntype", void 0)
 ], ExchangeController.prototype, "list", null);
 __decorate([

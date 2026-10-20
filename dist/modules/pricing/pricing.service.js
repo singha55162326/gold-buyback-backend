@@ -155,6 +155,29 @@ let PricingService = class PricingService {
         });
         return { id: snapshot.id, ...presentBoard(board) };
     }
+    /**
+     * Recompute the whole board from the CURRENT ລາຄາຂາຍ 1 ບາດ and whatever
+     * ຫັກອອກ (%) / ລາຄາລົບອອກ are set right now, then save it.
+     *
+     * Editing a deduction does not, on its own, move any price: the board is a
+     * snapshot, so the figures the shop quotes stay on the old rule until a new
+     * snapshot is written. Before this, the only way to apply a deduction
+     * change was to retype the gold price on Set Pricing — and retyping it is
+     * how a digit gets lost. This re-runs the same calculation with nothing
+     * typed at all.
+     */
+    async recalculate(actorId) {
+        const latest = await this.prisma.priceSnapshot.findFirst({
+            orderBy: { effectiveAt: 'desc' },
+        });
+        if (!latest) {
+            throw new common_1.NotFoundException('ຍັງບໍ່ມີການຕັ້ງລາຄາ — ຕັ້ງລາຄາຂາຍ 1 ບາດ ກ່ອນ');
+        }
+        return this.setPricing({
+            price1Baht: latest.price1Baht.toFixed(),
+            note: 'Refresh — ຄຳນວນຄືນຕາມ ຫັກອອກ (%) / ລາຄາລົບອອກ ປັດຈຸບັນ',
+        }, actorId);
+    }
     /** History Products — TOR §3.1 specifies 30 rows. */
     async history(limit = 30) {
         const rows = await this.prisma.priceSnapshot.findMany({

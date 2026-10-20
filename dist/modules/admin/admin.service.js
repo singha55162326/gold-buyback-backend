@@ -90,14 +90,13 @@ let AdminService = class AdminService {
         const user = await this.prisma.user.findFirst({ where: { id, deletedAt: null } });
         if (!user)
             throw new common_1.NotFoundException('ບໍ່ພົບຜູ້ໃຊ້');
-        // The last active administrator cannot be locked out of the system.
-        if (dto.isActive === false && user.role === 'ADMIN') {
-            const activeAdmins = await this.prisma.user.count({
-                where: { role: 'ADMIN', isActive: true, deletedAt: null },
-            });
-            if (activeAdmins <= 1) {
-                throw new common_1.BadRequestException('ບໍ່ສາມາດປິດການນຳໃຊ້ Admin ຄົນສຸດທ້າຍໄດ້');
-            }
+        // The last active administrator cannot be locked out of the system —
+        // whether by deactivating them or by demoting them, which has exactly
+        // the same effect and used not to be checked.
+        const losesAdmin = user.role === 'ADMIN' &&
+            (dto.isActive === false || (dto.role !== undefined && dto.role !== 'ADMIN'));
+        if (losesAdmin) {
+            await this.assertNotLastAdmin(id);
         }
         const updated = await this.prisma.user.update({
             where: { id },
@@ -386,6 +385,49 @@ let AdminService = class AdminService {
             orderBy: { createdAt: 'desc' },
             take: Math.min(limit, 1000),
         });
+    }
+    /** The system must keep at least one administrator who can still sign in. */
+    async assertNotLastAdmin(excludingId) {
+        const others = await this.prisma.user.count({
+            where: { role: 'ADMIN', isActive: true, deletedAt: null, id: { not: excludingId } },
+        });
+        if (others === 0) {
+            throw new common_1.BadRequestException('ບໍ່ສາມາດປິດການນຳໃຊ້ ຫຼື ລຶບ Admin ຄົນສຸດທ້າຍໄດ້');
+        }
+    }
+    /**
+     * ລຶບ = ປິດການນຳໃຊ້.
+     *
+     * A user id is stamped on every audit row, shift and transaction they ever
+     * touched; removing the row would leave those unreadable. Soft-deleting
+     * keeps the history intact and takes the account out of every picker.
+     */
+    async deleteUser(id, actor) {
+        if (id === actor.id) {
+            throw new common_1.BadRequestException('ລຶບບັນຊີຕົນເອງບໍ່ໄດ້');
+        }
+        const user = await this.prisma.user.findFirst({ where: { id, deletedAt: null } });
+        if (!user)
+            throw new common_1.NotFoundException('ບໍ່ພົບຜູ້ໃຊ້');
+        if (user.role === 'ADMIN')
+            await this.assertNotLastAdmin(id);
+        const updated = await this.prisma.user.update({
+            where: { id },
+            data: { isActive: false, deletedAt: new Date() },
+            select: { id: true, username: true, fullName: true, role: true, isActive: true },
+        });
+        // Signing them out now, rather than when their token happens to expire.
+        await this.prisma.session.deleteMany({ where: { userId: id } });
+        await this.audit.record({
+            actorId: actor.id,
+            action: 'DELETE',
+            entity: 'User',
+            entityId: id,
+            before: user,
+            after: updated,
+            summary: `ລຶບຜູ້ໃຊ້ ${user.fullName} (${user.username})`,
+        });
+        return updated;
     }
 };
 exports.AdminService = AdminService;

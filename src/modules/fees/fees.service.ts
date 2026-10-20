@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { dec } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { PricingService } from '../pricing/pricing.service';
 import type {
   UpdateDeductionDto,
   UpdateSoftGoldFeeDto,
@@ -22,6 +23,7 @@ export class FeesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly pricing: PricingService,
   ) {}
 
   private toDecimal(raw: string, label: string, allowZero = true): Prisma.Decimal {
@@ -273,6 +275,23 @@ export class FeesService {
       after: created,
       summary: `ອັບເດດຄ່າຫັກຊື້ຄືນ ${tier.labelLo}`,
     });
-    return created;
+
+    /*
+     * Re-price immediately.
+     *
+     * ລາຄາຊື້ຄືນ is derived from this rule, but it is READ from a price
+     * snapshot — so changing the rule used to leave every quoted buyback
+     * price on the old figure until someone retyped the gold price. The
+     * shop would have edited the rule, seen ຈັດການ Products unchanged, and
+     * reasonably concluded the edit had not saved.
+     *
+     * Both tables are append-only, so this keeps BOTH histories: the rule
+     * change is its own row, and the re-priced board is a new snapshot
+     * beside the old ones. Nothing is overwritten and every past quote can
+     * still be re-derived from the snapshot that was current at the time.
+     */
+    const board = await this.pricing.recalculate(actorId);
+
+    return { ...created, board };
   }
 }
