@@ -18,7 +18,7 @@
     "create-user": "tsx prisma/create-user.ts"
   },
   "dependencies": {
-    "@kpv/domain": "*",
+    "@kpv/domain": "file:./shared/",
     "@nestjs/common": "^11.0.7",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.7",

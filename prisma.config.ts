@@ -7,7 +7,7 @@ import { defineConfig } from 'prisma/config';
 // end up on different databases. Loading it explicitly here, rather than
 // relying on dotenv's cwd default, is what makes that guarantee hold.
 dotenv.config({
-  path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.env'),
+  path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env'),
 });
 
 /**
