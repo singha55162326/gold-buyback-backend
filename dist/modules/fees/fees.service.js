@@ -269,7 +269,9 @@ let FeesService = class FeesService {
          * beside the old ones. Nothing is overwritten and every past quote can
          * still be re-derived from the snapshot that was current at the time.
          */
-        const board = await this.pricing.recalculate(actorId);
+        const board = await this.pricing.recalculate(actorId, dto.kind === 'PERCENT'
+            ? `ຄ່າຫັກ ${tier.labelLo} = ${created.value.toFixed()}% — ຄຳນວນລາຄາຊື້ຄືນຄືນ`
+            : `ລາຄາລົບອອກ ${tier.labelLo} = ${created.value.toFixed(0)} — ຄຳນວນລາຄາຊື້ຄືນຄືນ`);
         return { ...created, board };
     }
 };

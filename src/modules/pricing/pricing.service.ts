@@ -175,7 +175,7 @@ export class PricingService {
    * how a digit gets lost. This re-runs the same calculation with nothing
    * typed at all.
    */
-  async recalculate(actorId: string) {
+  async recalculate(actorId: string, reasonLo?: string) {
     const latest = await this.prisma.priceSnapshot.findFirst({
       orderBy: { effectiveAt: 'desc' },
     });
@@ -186,17 +186,28 @@ export class PricingService {
     return this.setPricing(
       {
         price1Baht: latest.price1Baht.toFixed(),
-        note: 'Refresh — ຄຳນວນຄືນຕາມ ຫັກອອກ (%) / ລາຄາລົບອອກ ປັດຈຸບັນ',
+        // ໝາຍເຫດບອກວ່າ "ເປັນຫຍັງລາຄາຊື້ຄືນຈຶ່ງປ່ຽນ ທັ້ງທີ່ລາຄາຄຳບໍ່ປ່ຽນ" —
+        // ຖ້າບໍ່ມີ, ປະຫວັດຈະເຫັນແຕ່ແຖວລາຄາ 1 ບາດ ຄືເກົ່າຊ້ຳກັນ ແລະ ອ່ານບໍ່ອອກ.
+        note: reasonLo ?? 'Refresh — ຄຳນວນຄືນຕາມ ຫັກອອກ (%) / ລາຄາລົບອອກ ປັດຈຸບັນ',
       },
       actorId,
     );
   }
 
-  /** History Products — TOR §3.1 specifies 30 rows. */
+  /**
+   * History Products — TOR §3.1 specifies 30 rows.
+   *
+   * ແຕ່ລະແຖວພາ ລາຄາຂາຍ / ລາຄາຊື້ຄືນ ຕໍ່ນ້ຳໜັກ ຂອງ snapshot ນັ້ນມານຳ, ເພາະ
+   * ລາຄາຊື້ຄືນ ປ່ຽນໄດ້ທັ້ງທີ່ ລາຄາ 1 ບາດ ຄືເກົ່າ (ເມື່ອແກ້ຄ່າຫັກ) — ປະຫວັດ
+   * ທີ່ມີແຕ່ລາຄາ 1 ບາດ ຈຶ່ງຕອບບໍ່ໄດ້ວ່າ ມື້ນັ້ນຮ້ານຊື້ຄືນລາຄາເທົ່າໃດ.
+   */
   async history(limit = 30) {
     const rows = await this.prisma.priceSnapshot.findMany({
       orderBy: { effectiveAt: 'desc' },
       take: Math.min(limit, 200),
+      include: {
+        lines: { include: { tier: true }, orderBy: { tier: { sortOrder: 'asc' } } },
+      },
     });
     const users = await this.prisma.user.findMany({
       where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
@@ -210,6 +221,14 @@ export class PricingService {
       price1Baht: row.price1Baht.toFixed(),
       updatedBy: nameById.get(row.createdById) ?? '—',
       note: row.note,
+      lines: row.lines.map((line) => ({
+        tierCode: line.tierCode,
+        labelLo: line.tier.labelLo,
+        category: line.tier.category,
+        displayWeightG: line.tier.displayWeightG.toFixed(),
+        sellPrice: line.sellPrice.toFixed(),
+        buybackPrice: line.buybackPrice.toFixed(),
+      })),
     }));
   }
 }
