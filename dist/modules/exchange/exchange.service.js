@@ -185,6 +185,9 @@ let ExchangeService = class ExchangeService {
             throw new common_1.BadRequestException(validation.messageLo ?? 'ນ້ຳໜັກບໍ່ສົມດຸນ');
         }
         // §5.2 now has the same Cash/Bank payment step as §5.1.
+        // ວິທີຈ່າຍ ສົດ / ໂອນ ແຍກກັນ: ແຖວໂອນຕ້ອງມີບັນຊີທີ່ເປີດຢູ່ ກ່ອນບັນທຶກ,
+        // ບໍ່ດັ່ງນັ້ນ ຕອນອະນຸມັດຈະບໍ່ມີບ່ອນລົງເງິນທີ່ຈ່າຍອອກ.
+        await this.assertBankLegs(dto.payments ?? []);
         const paymentLines = (dto.payments ?? []).map((line) => this.resolvePayment(line, totals.totalPayable, context.rates));
         const paidLak = paymentLines.reduce((sum, line) => sum.plus(line.amountLak), (0, domain_1.dec)(0));
         const changeLak = paymentLines.reduce((sum, line) => sum.plus(line.changeLak), (0, domain_1.dec)(0));
@@ -305,7 +308,12 @@ let ExchangeService = class ExchangeService {
                             },
                         });
                     }
-                    else if (payment.bankAccountId) {
+                    else {
+                        // ກວດຕອນສ້າງແລ້ວ, ກວດຊ້ຳບ່ອນນີ້: ແຖວໂອນທີ່ບໍ່ມີບັນຊີ ຈະເຮັດໃຫ້
+                        // ຄຳເຂົ້າສາງ ແຕ່ເງິນບໍ່ເຄີຍອອກຈາກຍອດທະນາຄານໃດ.
+                        if (!payment.bankAccountId) {
+                            throw new common_1.BadRequestException(`ແຖວຈ່າຍແບບໂອນຂອງ ${exchange.code} ບໍ່ມີບັນຊີທະນາຄານ — ອະນຸມັດບໍ່ໄດ້`);
+                        }
                         await tx.bankTransaction.create({
                             data: {
                                 businessDayId: day.id,
@@ -407,6 +415,23 @@ let ExchangeService = class ExchangeService {
      *   CHANGE (LAK ONLY) = (Amount × Rate) − ລວມເງິນທີ່ຕ້ອງຈ່າຍ (LAK)
      *   Amount LAK ຕ້ອງ ≤ TOTAL(LAK)
      */
+    /** ສົດ ຕັດຈາກລີ້ນຊັກ, ໂອນ ຕັດຈາກບັນຊີທີ່ລະບຸ — ກວດແຕ່ລະແຖວແຍກກັນ. */
+    async assertBankLegs(lines) {
+        const bankLegs = lines.filter((line) => line.method === 'BANK');
+        if (bankLegs.length === 0)
+            return;
+        if (bankLegs.some((line) => !line.bankAccountId)) {
+            throw new common_1.BadRequestException('ການຈ່າຍແບບໂອນ ຕ້ອງເລືອກທະນາຄານ');
+        }
+        const ids = [...new Set(bankLegs.map((line) => line.bankAccountId))];
+        const open = await this.prisma.bankAccount.findMany({
+            where: { id: { in: ids }, isActive: true },
+            select: { id: true },
+        });
+        if (open.length !== ids.length) {
+            throw new common_1.BadRequestException('ບັນຊີທະນາຄານທີ່ເລືອກບໍ່ມີ ຫຼື ຖືກປິດໃຊ້ງານແລ້ວ');
+        }
+    }
     resolvePayment(line, totalPayable, rates) {
         if (line.method === 'BANK' && !line.bankAccountId) {
             throw new common_1.BadRequestException('ກະລຸນາເລືອກທະນາຄານ');

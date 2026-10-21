@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const audit_service_1 = require("../../common/services/audit.service");
+const history_range_service_1 = require("../../common/services/history-range.service");
 const pricing_service_1 = require("../pricing/pricing.service");
 /**
  * The fee tables of TOR §3.2 and §3.4.
@@ -27,10 +28,12 @@ let FeesService = class FeesService {
     prisma;
     audit;
     pricing;
-    constructor(prisma, audit, pricing) {
+    range;
+    constructor(prisma, audit, pricing, range) {
         this.prisma = prisma;
         this.audit = audit;
         this.pricing = pricing;
+        this.range = range;
     }
     toDecimal(raw, label, allowZero = true) {
         const value = (0, domain_1.dec)(raw);
@@ -77,13 +80,26 @@ let FeesService = class FeesService {
             .filter((r) => r.deletedAt === null)
             .sort((a, b) => a.tier.sortOrder - b.tier.sortOrder);
     }
-    async jewelryFeeHistory(limit = 60) {
-        const rows = await this.prisma.jewelryConversionFee.findMany({
-            orderBy: { effectiveAt: 'desc' },
-            include: { tier: true },
-            take: Math.min(limit, 500),
-        });
-        return this.withEditorNames(rows);
+    /**
+     * ປະຫວັດຄ່າປ່ຽນຮູບປະພັນ — ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້, ກວ້າງອອກໄດ້ຕາມສິດ.
+     *
+     * ກອງຕາມ `effectiveAt` ບໍ່ແມ່ນ `createdAt`: ແຖວໜຶ່ງຄືລາຄາທີ່ມີຜົນແຕ່ເວລາ
+     * ນັ້ນ, ສະນັ້ນ "ມື້ນີ້ແກ້ຫຍັງແດ່" ຕ້ອງຖາມຕາມເວລາມີຜົນ.
+     */
+    async jewelryFeeHistory(query, user) {
+        const range = this.range.resolve(query, user);
+        const where = { effectiveAt: history_range_service_1.HistoryRangeService.window(range) };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.jewelryConversionFee.findMany({
+                where,
+                orderBy: { effectiveAt: 'desc' },
+                include: { tier: true },
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.jewelryConversionFee.count({ where }),
+        ]);
+        return this.range.page(await this.withEditorNames(rows), total, range);
     }
     /**
      * Retire a tier's fee. The exchange engine falls back to 0 for a weight it
@@ -145,12 +161,20 @@ let FeesService = class FeesService {
             .filter((r) => r.deletedAt === null)
             .sort((a, b) => Number(b.weightG) - Number(a.weightG));
     }
-    async barFeeHistory(limit = 60) {
-        const rows = await this.prisma.barConversionFee.findMany({
-            orderBy: { effectiveAt: 'desc' },
-            take: Math.min(limit, 500),
-        });
-        return this.withEditorNames(rows);
+    /** ປະຫວັດຄ່າປ່ຽນຄຳແທ່ງ — ເງື່ອນໄຂດຽວກັນກັບຮູບປະພັນ. */
+    async barFeeHistory(query, user) {
+        const range = this.range.resolve(query, user);
+        const where = { effectiveAt: history_range_service_1.HistoryRangeService.window(range) };
+        const [rows, total] = await this.prisma.$transaction([
+            this.prisma.barConversionFee.findMany({
+                where,
+                orderBy: { effectiveAt: 'desc' },
+                skip: range.skip,
+                take: range.take,
+            }),
+            this.prisma.barConversionFee.count({ where }),
+        ]);
+        return this.range.page(await this.withEditorNames(rows), total, range);
     }
     /** Retire a bar weight. See deleteJewelryFee — same tombstone, same caveat. */
     async deleteBarFee(weightG, actorId) {
@@ -281,6 +305,7 @@ exports.FeesService = FeesService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_service_1.AuditService,
-        pricing_service_1.PricingService])
+        pricing_service_1.PricingService,
+        history_range_service_1.HistoryRangeService])
 ], FeesService);
 //# sourceMappingURL=fees.service.js.map

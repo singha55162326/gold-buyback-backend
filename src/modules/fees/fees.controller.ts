@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { FeesService } from './fees.service';
+import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import {
   UpdateDeductionDto,
   UpdateSoftGoldFeeDto,
@@ -32,9 +33,10 @@ export class FeesController {
     return this.fees.currentJewelryFees();
   }
 
+  // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ສິດກວ້າງວັນທີບັງຄັບຢູ່ service ບໍ່ແມ່ນ FE.
   @Get('conversion/jewelry/history')
-  jewelryFeeHistory(@Query('limit', new DefaultValuePipe(60), ParseIntPipe) limit: number) {
-    return this.fees.jewelryFeeHistory(limit);
+  jewelryFeeHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.fees.jewelryFeeHistory(query, user);
   }
 
   @Roles('ADMIN', 'MANAGER')
@@ -55,8 +57,8 @@ export class FeesController {
   }
 
   @Get('conversion/bar/history')
-  barFeeHistory(@Query('limit', new DefaultValuePipe(60), ParseIntPipe) limit: number) {
-    return this.fees.barFeeHistory(limit);
+  barFeeHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.fees.barFeeHistory(query, user);
   }
 
   @Roles('ADMIN', 'MANAGER')

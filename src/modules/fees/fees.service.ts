@@ -3,6 +3,9 @@ import { Prisma } from '@prisma/client';
 import { dec } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { HistoryRangeService } from '../../common/services/history-range.service';
+import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
+import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PricingService } from '../pricing/pricing.service';
 import type {
   UpdateDeductionDto,
@@ -24,6 +27,7 @@ export class FeesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly pricing: PricingService,
+    private readonly range: HistoryRangeService,
   ) {}
 
   private toDecimal(raw: string, label: string, allowZero = true): Prisma.Decimal {
@@ -75,13 +79,27 @@ export class FeesService {
       .sort((a, b) => a.tier.sortOrder - b.tier.sortOrder);
   }
 
-  async jewelryFeeHistory(limit = 60) {
-    const rows = await this.prisma.jewelryConversionFee.findMany({
-      orderBy: { effectiveAt: 'desc' },
-      include: { tier: true },
-      take: Math.min(limit, 500),
-    });
-    return this.withEditorNames(rows);
+  /**
+   * ປະຫວັດຄ່າປ່ຽນຮູບປະພັນ — ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້, ກວ້າງອອກໄດ້ຕາມສິດ.
+   *
+   * ກອງຕາມ `effectiveAt` ບໍ່ແມ່ນ `createdAt`: ແຖວໜຶ່ງຄືລາຄາທີ່ມີຜົນແຕ່ເວລາ
+   * ນັ້ນ, ສະນັ້ນ "ມື້ນີ້ແກ້ຫຍັງແດ່" ຕ້ອງຖາມຕາມເວລາມີຜົນ.
+   */
+  async jewelryFeeHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = { effectiveAt: HistoryRangeService.window(range) };
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.jewelryConversionFee.findMany({
+        where,
+        orderBy: { effectiveAt: 'desc' },
+        include: { tier: true },
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.jewelryConversionFee.count({ where }),
+    ]);
+    return this.range.page(await this.withEditorNames(rows), total, range);
   }
 
   /**
@@ -151,12 +169,21 @@ export class FeesService {
       .sort((a, b) => Number(b.weightG) - Number(a.weightG));
   }
 
-  async barFeeHistory(limit = 60) {
-    const rows = await this.prisma.barConversionFee.findMany({
-      orderBy: { effectiveAt: 'desc' },
-      take: Math.min(limit, 500),
-    });
-    return this.withEditorNames(rows);
+  /** ປະຫວັດຄ່າປ່ຽນຄຳແທ່ງ — ເງື່ອນໄຂດຽວກັນກັບຮູບປະພັນ. */
+  async barFeeHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = { effectiveAt: HistoryRangeService.window(range) };
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.barConversionFee.findMany({
+        where,
+        orderBy: { effectiveAt: 'desc' },
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.barConversionFee.count({ where }),
+    ]);
+    return this.range.page(await this.withEditorNames(rows), total, range);
   }
 
   /** Retire a bar weight. See deleteJewelryFee — same tombstone, same caveat. */
