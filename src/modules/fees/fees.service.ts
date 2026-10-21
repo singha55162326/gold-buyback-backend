@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { dec } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { PricingService } from '../pricing/pricing.service';
 import type {
   UpdateDeductionDto,
   UpdateSoftGoldFeeDto,
@@ -22,6 +23,7 @@ export class FeesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly pricing: PricingService,
   ) {}
 
   private toDecimal(raw: string, label: string, allowZero = true): Prisma.Decimal {
@@ -259,20 +261,48 @@ export class FeesService {
       throw new BadRequestException('ຫັກອອກ (%) ຕ້ອງຢູ່ລະຫວ່າງ 0 ຫາ 100');
     }
 
-    const created = await this.prisma.buybackDeductionRule.create({
-      data: {
-        tierCode: dto.tierCode,
-        kind: dto.kind,
-        value: this.toDecimal(dto.value, 'ຄ່າຫັກ'),
-        createdById: actorId,
-      },
+    /*
+     * ກົດຄ່າຫັກໃໝ່ ແລະ ລາຄາໃໝ່ ຂຽນພ້ອມກັນໃນທຸລະກຳດຽວ.
+     *
+     * ລາຄາຊື້ຄືນ ຄິດມາຈາກກົດນີ້ ແຕ່ຖືກ "ອ່ານ" ຈາກ price snapshot — ສະນັ້ນ
+     * ການແກ້ກົດຢ່າງດຽວ ເຄີຍເຮັດໃຫ້ລາຄາທີ່ຮ້ານອ້າງຍັງເປັນອັນເກົ່າ ຈົນກວ່າຈະ
+     * ມີຄົນພິມລາຄາຄຳຄືນໃໝ່. ການມັດສອງຢ່າງໄວ້ນຳກັນ ຍັງປິດຊ່ອງທີ່ກົດຖືກບັນທຶກ
+     * ແລ້ວການຄຳນວນລົ້ມ — ຊຶ່ງຈະເຫັນເປັນ "ຄ່າປ່ຽນແລ້ວ ແຕ່ປະຫວັດລາຄາບໍ່ຂຶ້ນ".
+     *
+     * ສອງຕາຕະລາງເປັນ append-only ຈຶ່ງເກັບທັງສອງປະຫວັດ: ການແກ້ກົດເປັນແຖວຂອງ
+     * ມັນເອງ ແລະ ກະດານລາຄາໃໝ່ເປັນ snapshot ໃໝ່ຢູ່ຂ້າງອັນເກົ່າ — ບໍ່ມີການທັບ
+     * ແຖວໃດ ແລະ ລາຄາທີ່ເຄີຍອ້າງໄປແລ້ວ ຍັງຄົ້ນຄືນໄດ້ຄົບ.
+     */
+    const { created, board } = await this.prisma.$transaction(async (tx) => {
+      const rule = await tx.buybackDeductionRule.create({
+        data: {
+          tierCode: dto.tierCode,
+          kind: dto.kind,
+          value: this.toDecimal(dto.value, 'ຄ່າຫັກ'),
+          createdById: actorId,
+        },
+      });
+
+      const repriced = await this.pricing.recalculate(
+        actorId,
+        dto.kind === 'PERCENT'
+          ? `ຄ່າຫັກ ${tier.labelLo} = ${rule.value.toFixed()}% — ຄຳນວນລາຄາຊື້ຄືນຄືນ`
+          : `ລາຄາລົບອອກ ${tier.labelLo} = ${rule.value.toFixed(0)} — ຄຳນວນລາຄາຊື້ຄືນຄືນ`,
+        tx,
+      );
+
+      await this.audit.record(
+        {
+          actorId, action: 'UPDATE', entity: 'BuybackDeductionRule', entityId: rule.id,
+          after: rule,
+          summary: `ອັບເດດຄ່າຫັກຊື້ຄືນ ${tier.labelLo}`,
+        },
+        tx,
+      );
+
+      return { created: rule, board: repriced };
     });
 
-    await this.audit.record({
-      actorId, action: 'UPDATE', entity: 'BuybackDeductionRule', entityId: created.id,
-      after: created,
-      summary: `ອັບເດດຄ່າຫັກຊື້ຄືນ ${tier.labelLo}`,
-    });
-    return created;
+    return { ...created, board };
   }
 }

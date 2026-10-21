@@ -30,6 +30,17 @@ export class PricingController {
     return this.pricing.preview(dto.price1Baht);
   }
 
+  /**
+   * Refresh — recompute every price from the current gold price and the
+   * current deduction rules, and save. Nothing is typed, so nothing is
+   * mistyped.
+   */
+  @Roles('ADMIN', 'MANAGER')
+  @Post('recalculate')
+  recalculate(@CurrentUser() user: AuthenticatedUser) {
+    return this.pricing.recalculate(user.id);
+  }
+
   /** Set Pricing (TOR §3.1) — ADMIN/MANAGER only. */
   @Roles('ADMIN', 'MANAGER')
   @Post('set')

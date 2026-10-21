@@ -10,6 +10,8 @@ import {
 } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { HistoryRangeService } from '../../common/services/history-range.service';
+import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import { ApprovalService } from '../../common/services/approval.service';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { StockLedgerService } from '../../common/services/stock-ledger.service';
@@ -50,6 +52,7 @@ export class ExchangeService {
     private readonly stockLedger: StockLedgerService,
     private readonly notifications: NotificationsService,
     private readonly pricingContext: PricingContextService,
+    private readonly range: HistoryRangeService,
   ) {}
 
   /**
@@ -408,9 +411,16 @@ export class ExchangeService {
     });
   }
 
-  async list(status?: ApprovalStatus) {
+  async list(status: ApprovalStatus | undefined, query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      createdAt: HistoryRangeService.window(range),
+      ...(status ? { status } : {}),
+    };
+    const total = await this.prisma.goldExchange.count({ where });
     const rows = await this.prisma.goldExchange.findMany({
-      where: { deletedAt: null, ...(status ? { status } : {}) },
+      where,
       include: {
         customer: true,
         oldLines: { include: { goldType: true } },
@@ -419,11 +429,12 @@ export class ExchangeService {
         payments: { include: { bankAccount: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 200,
+      skip: range.skip,
+      take: range.take,
     });
 
     // TOR History tables carry UPDATED BY.
-    return this.audit.withActorNames(rows);
+    return this.range.page(await this.audit.withActorNames(rows), total, range);
   }
 
   /**

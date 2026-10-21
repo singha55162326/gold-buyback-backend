@@ -7,7 +7,7 @@ import {
   IsString,
   Matches,
   Min,
-  ValidateNested,
+  ValidateNested,  ArrayMinSize,  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -16,6 +16,15 @@ export class OrderReceiptDto {
   @IsOptional() @IsString() bankAccountId?: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
   @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
+}
+
+/** The legs of one receipt — ສົດ and ໂອນ, several currencies, one bill. */
+export class OrderReceiptLinesDto {
+  @IsArray()
+  @ArrayMinSize(1, { message: 'ຕ້ອງມີລາຍການຮັບເງິນຢ່າງໜ້ອຍ 1 ລາຍການ' })
+  @ValidateNested({ each: true })
+  @Type(() => OrderReceiptDto)
+  receipts: OrderReceiptDto[];
 }
 
 export class CreateOrderDto {
@@ -39,8 +48,17 @@ export class CreateOrderDto {
   @IsOptional() @IsString() note?: string;
 
   @ValidateNested()
+  /** Superseded by `receipts`; accepted so an older client still works. */
+  @IsOptional()
+  @ValidateNested()
   @Type(() => OrderReceiptDto)
-  receipt: OrderReceiptDto;
+  receipt?: OrderReceiptDto;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderReceiptDto)
+  receipts?: OrderReceiptDto[];
 }
 
 export class UpdateOrderStatusDto {
@@ -68,4 +86,19 @@ export class UpdateOrderStatusDto {
   @IsOptional() @IsDateString() customerPickupAt?: string;
 
   @IsOptional() @IsString() note?: string;
+}
+
+export class ReceiveOrderDto {
+  /** Single-leg form, kept so an older client still works. */
+  @IsOptional() @IsIn(['CASH', 'BANK']) method?: 'CASH' | 'BANK';
+  @IsOptional() @IsString() bankAccountId?: string;
+  @IsOptional() @IsIn(['LAK', 'THB', 'USD']) currency?: 'LAK' | 'THB' | 'USD';
+  @IsOptional() @IsNumberString() amount?: string;
+
+  /** Multi-leg form: ສົດ and ໂອນ, several currencies, one receipt. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderReceiptDto)
+  receipts?: OrderReceiptDto[];
 }

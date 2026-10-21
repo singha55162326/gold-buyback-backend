@@ -6,6 +6,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RequiresOpenShift } from '../../common/decorators/requires-shift.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
 @ApiTags('buyback')
 @ApiBearerAuth('bearer')
@@ -13,9 +14,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 export class BuybackController {
   constructor(private readonly buyback: BuybackService) {}
 
+  // The date range defaults to today and a Valuer cannot widen it —
+  // HistoryRangeService enforces that, not the client.
   @Get()
-  list(@Query('status') status?: ApprovalStatus) {
-    return this.buyback.list(status);
+  list(
+    @Query() query: HistoryRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('status') status?: ApprovalStatus,
+  ) {
+    return this.buyback.list(status, query, user);
   }
 
   /** Live §5.1 calculation for the Valuer's form. */

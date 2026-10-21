@@ -11,6 +11,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RequiresOpenShift } from '../../common/decorators/requires-shift.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
 @ApiTags('cash')
 @ApiBearerAuth('bearer')
@@ -63,8 +64,8 @@ export class CashController {
   }
 
   @Get('history')
-  cashHistory() {
-    return this.cash.cashHistory();
+  cashHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.cash.cashHistory(query, user);
   }
 
   @Roles('FINANCIAL_CONTROLLER', 'ADMIN', 'MANAGER')
@@ -84,8 +85,8 @@ export class CashController {
   }
 
   @Get('bank/history')
-  bankHistory() {
-    return this.cash.bankHistory();
+  bankHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.cash.bankHistory(query, user);
   }
 
   @Roles('FINANCIAL_CONTROLLER', 'ADMIN', 'MANAGER')

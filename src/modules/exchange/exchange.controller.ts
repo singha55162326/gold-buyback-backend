@@ -6,6 +6,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RequiresOpenShift } from '../../common/decorators/requires-shift.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
 @ApiTags('exchange')
 @ApiBearerAuth('bearer')
@@ -14,8 +15,12 @@ export class ExchangeController {
   constructor(private readonly exchange: ExchangeService) {}
 
   @Get()
-  list(@Query('status') status?: ApprovalStatus) {
-    return this.exchange.list(status);
+  list(
+    @Query() query: HistoryRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('status') status?: ApprovalStatus,
+  ) {
+    return this.exchange.list(status, query, user);
   }
 
   /**

@@ -3,13 +3,20 @@ import { Prisma, type ApprovalStatus, type Currency } from '@prisma/client';
 import { dec, type Decimal } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { HistoryRangeService } from '../../common/services/history-range.service';
+import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import { ApprovalService } from '../../common/services/approval.service';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { ApArPostingService } from '../../common/services/apar-posting.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PricingContextService } from '../pricing/pricing-context.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import type { CreateCreditDto, CreditReceiptDto, ReviewCreditDto } from './dto/credit.dto';
+import type {
+  CreateCreditDto,
+  CreditReceiptDto,
+  ReceiveCreditDto,
+  ReviewCreditDto,
+} from './dto/credit.dto';
 
 const D = (value: Decimal) => new Prisma.Decimal(value.toFixed());
 
@@ -41,39 +48,83 @@ export class CreditService {
     private readonly apar: ApArPostingService,
     private readonly notifications: NotificationsService,
     private readonly pricingContext: PricingContextService,
+    private readonly range: HistoryRangeService,
   ) {}
 
   /**
    * Convert a receipt to LAK at the SELL rate (the shop is taking money in)
    * and apply the §5.3 change caps.
    */
-  private resolveReceipt(
-    dto: CreditReceiptDto,
+  /**
+   * Resolve every leg of one receipt.
+   *
+   * A customer may pay part in cash and part by transfer, in more than one
+   * currency, against a single instalment. Each leg converts at its own
+   * rate; the change is computed on the TOTAL and charged to the last leg,
+   * so the legs still sum to exactly what was taken in.
+   */
+  private resolveReceipts(
+    lines: CreditReceiptDto[],
     rates: Parameters<typeof PricingContextService.rateFor>[0],
     owed: Decimal,
   ) {
-    if (dto.method === 'BANK' && !dto.bankAccountId) {
-      throw new BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
+    if (lines.length === 0) {
+      throw new BadRequestException('ຕ້ອງມີລາຍການຮັບເງິນຢ່າງໜ້ອຍ 1 ລາຍການ');
     }
 
-    const amount = dec(dto.amount);
-    if (!amount.isFinite() || amount.lte(0)) {
-      throw new BadRequestException('ຈຳນວນເງິນຕ້ອງໃຫຍ່ກວ່າ 0');
+    const resolved = lines.map((dto) => {
+      if (dto.method === 'BANK' && !dto.bankAccountId) {
+        throw new BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
+      }
+
+      const amount = dec(dto.amount);
+      if (!amount.isFinite() || amount.lte(0)) {
+        throw new BadRequestException('ຈຳນວນເງິນຕ້ອງໃຫຍ່ກວ່າ 0');
+      }
+
+      const rate = PricingContextService.rateFor(rates, dto.currency, 'sell');
+      return { ...dto, amount, rate, amountLak: amount.mul(rate), changeLak: dec(0) };
+    });
+
+    const totalLak = resolved.reduce((sum, l) => sum.plus(l.amountLak), dec(0));
+    const change = totalLak.gt(owed) ? totalLak.minus(owed) : dec(0);
+
+    if (change.gt(0)) {
+      const last = resolved[resolved.length - 1]!;
+      last.changeLak = change;
+
+      // §5.3: THB change ≤ 1,000 THB equivalent; USD change ≤ 100 USD.
+      // Checked against the leg the change comes out of.
+      const limit = CHANGE_LIMIT[last.currency];
+      if (limit && change.gt(limit.mul(last.rate))) {
+        throw new BadRequestException(
+          `ເງິນທອນຈາກ ${last.currency} ປ້ອນໄດ້ບໍ່ເກີນ ${limit.toFixed(0)} ${last.currency}`,
+        );
+      }
     }
 
-    const rate = PricingContextService.rateFor(rates, dto.currency, 'sell');
-    const amountLak = amount.mul(rate);
-    const changeLak = amountLak.gt(owed) ? amountLak.minus(owed) : dec(0);
+    return { lines: resolved, totalLak, changeLak: change };
+  }
 
-    // §5.3: THB change ≤ 1,000 THB equivalent; USD change ≤ 100 USD.
-    const limit = CHANGE_LIMIT[dto.currency];
-    if (limit && changeLak.gt(limit.mul(rate))) {
-      throw new BadRequestException(
-        `ເງິນທອນຈາກ ${dto.currency} ປ້ອນໄດ້ບໍ່ເກີນ ${limit.toFixed(0)} ${dto.currency}`,
-      );
+  /**
+   * The legs of a request, however the client spelled them: nested under
+   * `receipt`, listed under `receipts`, or — on the receive endpoint —
+   * spread across the body itself.
+   */
+  private receiptLines(dto: {
+    receipt?: CreditReceiptDto;
+    receipts?: CreditReceiptDto[];
+    method?: string;
+    bankAccountId?: string;
+    currency?: string;
+    amount?: string;
+  }): CreditReceiptDto[] {
+    if (dto.receipts?.length) return dto.receipts;
+    if (dto.receipt) return [dto.receipt];
+    if (dto.method && dto.currency && dto.amount) {
+      return [dto as unknown as CreditReceiptDto];
     }
-
-    return { amount, rate, amountLak, changeLak };
+    return [];
   }
 
   async create(dto: CreateCreditDto, user: AuthenticatedUser, shiftId: string) {
@@ -91,10 +142,10 @@ export class CreditService {
     const outstanding = sellPrice.minus(downPayment);
 
     // §5.3: the down payment received must cover the agreed down payment.
-    const receipt = this.resolveReceipt(dto.receipt, context.rates, downPayment);
-    if (receipt.amountLak.lt(downPayment)) {
+    const receipt = this.resolveReceipts(this.receiptLines(dto), context.rates, downPayment);
+    if (receipt.totalLak.lt(downPayment)) {
       throw new BadRequestException(
-        `ຮັບເງິນ (${receipt.amountLak.toFixed(0)} LAK) ຕ້ອງບໍ່ຫນ້ອຍກວ່າເງິນວາງດາວ (${downPayment.toFixed(0)} LAK)`,
+        `ຮັບເງິນ (${receipt.totalLak.toFixed(0)} LAK) ຕ້ອງບໍ່ຫນ້ອຍກວ່າເງິນວາງດາວ (${downPayment.toFixed(0)} LAK)`,
       );
     }
 
@@ -120,17 +171,17 @@ export class CreditService {
           status: 'PENDING',
           createdById: user.id,
           receipts: {
-            create: {
-              method: dto.receipt.method,
-              bankAccountId: dto.receipt.bankAccountId ?? null,
-              currency: dto.receipt.currency,
-              rate: D(receipt.rate),
-              amount: D(receipt.amount),
-              amountLak: D(receipt.amountLak),
-              changeLak: D(receipt.changeLak),
+            create: receipt.lines.map((line) => ({
+              method: line.method,
+              bankAccountId: line.bankAccountId ?? null,
+              currency: line.currency,
+              rate: D(line.rate),
+              amount: D(line.amount),
+              amountLak: D(line.amountLak),
+              changeLak: D(line.changeLak),
               isDownPayment: true,
               createdById: user.id,
-            },
+            })),
           },
         },
         include: { receipts: true, customer: true },
@@ -244,7 +295,7 @@ export class CreditService {
   }
 
   /** An instalment against an outstanding credit — draws down the AR. */
-  async addReceipt(id: string, dto: CreditReceiptDto, user: AuthenticatedUser) {
+  async addReceipt(id: string, dto: ReceiveCreditDto, user: AuthenticatedUser) {
     const credit = await this.prisma.goldCredit.findFirst({ where: { id, deletedAt: null } });
     if (!credit) throw new NotFoundException('ບໍ່ພົບລາຍການສິນເຊື່ອ');
     if (credit.status !== 'APPROVED' && credit.status !== 'COMPLETED') {
@@ -255,33 +306,37 @@ export class CreditService {
     if (outstanding.lte(0)) throw new BadRequestException('ສິນເຊື່ອນີ້ຊຳຣະຄົບແລ້ວ');
 
     const context = await this.pricingContext.load();
-    const receipt = this.resolveReceipt(dto, context.rates, outstanding);
-    const applied = receipt.amountLak.minus(receipt.changeLak);
+    const receipt = this.resolveReceipts(this.receiptLines(dto), context.rates, outstanding);
+    const applied = receipt.totalLak.minus(receipt.changeLak);
     const remaining = outstanding.minus(applied);
     const day = await this.businessDay.current();
 
     return this.prisma.$transaction(async (tx) => {
-      const created = await tx.creditReceipt.create({
-        data: {
-          creditId: id,
-          method: dto.method,
-          bankAccountId: dto.bankAccountId ?? null,
-          currency: dto.currency,
-          rate: D(receipt.rate),
-          amount: D(receipt.amount),
-          amountLak: D(receipt.amountLak),
-          changeLak: D(receipt.changeLak),
-          createdById: user.id,
-        },
-      });
+      // One row and one cash/bank movement per leg, so Module Cash and
+      // Module Bank each show what actually arrived in them.
+      for (const line of receipt.lines) {
+        const created = await tx.creditReceipt.create({
+          data: {
+            creditId: id,
+            method: line.method,
+            bankAccountId: line.bankAccountId ?? null,
+            currency: line.currency,
+            rate: D(line.rate),
+            amount: D(line.amount),
+            amountLak: D(line.amountLak),
+            changeLak: D(line.changeLak),
+            createdById: user.id,
+          },
+        });
 
-      await this.recordReceiptMoney(tx, {
-        receipt: created,
-        businessDayId: day.id,
-        note: `ຮັບຄ່າງວດສິນເຊື່ອ ${credit.code}`,
-        refId: credit.id,
-        createdById: user.id,
-      });
+        await this.recordReceiptMoney(tx, {
+          receipt: created,
+          businessDayId: day.id,
+          note: `ຮັບຄ່າງວດສິນເຊື່ອ ${credit.code}`,
+          refId: credit.id,
+          createdById: user.id,
+        });
+      }
 
       await this.apar.postCash(tx, {
         reason: 'CREDIT_RECEIPT',
@@ -318,16 +373,26 @@ export class CreditService {
     });
   }
 
-  async list(status?: ApprovalStatus) {
-    const rows = await this.prisma.goldCredit.findMany({
-      where: { deletedAt: null, ...(status ? { status } : {}) },
-      include: { customer: true, goldItem: true, receipts: true },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-    });
+  async list(status: ApprovalStatus | undefined, query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      createdAt: HistoryRangeService.window(range),
+      ...(status ? { status } : {}),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.goldCredit.findMany({
+        where,
+        include: { customer: true, goldItem: true, receipts: true },
+        orderBy: { createdAt: 'desc' },
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.goldCredit.count({ where }),
+    ]);
 
     // TOR History tables carry UPDATED BY.
-    return this.audit.withActorNames(rows);
+    return this.range.page(await this.audit.withActorNames(rows), total, range);
   }
 
   /** Money in, to cash or bank depending on how it was taken. */

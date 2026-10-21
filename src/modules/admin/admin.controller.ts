@@ -1,4 +1,15 @@
-import { Body, Controller, DefaultValuePipe, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { CreateUserDto, ResetPasswordDto, UpdateUserDto } from './dto/admin.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -30,6 +41,11 @@ export class AdminController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.admin.updateUser(id, dto, user);
+  }
+
+  @Delete('users/:id')
+  deleteUser(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.admin.deleteUser(id, user);
   }
 
   @Post('users/:id/password')

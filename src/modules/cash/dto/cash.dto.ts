@@ -46,8 +46,16 @@ export class CreateCashTransactionDto {
 export class CreateBankTransactionDto {
   @IsString() bankAccountId: string;
 
-  @IsIn(['DEPOSIT', 'WITHDRAW', 'INCOME', 'EXPENSE'])
-  type: 'DEPOSIT' | 'WITHDRAW' | 'INCOME' | 'EXPENSE';
+  /**
+   * Only ຝາກ / ຖອນ may be entered by hand.
+   *
+   * INCOME and EXPENSE still exist on BankTransaction, but they are written
+   * by Module ຈັດການລາຍຮັບລາຍຈ່າຍ, which classifies them against a category.
+   * Letting this form post them directly produced bank rows no income or
+   * expense report could account for.
+   */
+  @IsIn(['DEPOSIT', 'WITHDRAW'], { message: 'ປະເພດທຸລະກຳຕ້ອງເປັນ ຝາກ ຫຼື ຖອນ' })
+  type: 'DEPOSIT' | 'WITHDRAW';
 
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
   @IsNumberString() amount: string;

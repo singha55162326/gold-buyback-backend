@@ -3,11 +3,18 @@ import { Prisma, type Currency, type OrderStatus } from '@prisma/client';
 import { dec, type Decimal } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { HistoryRangeService } from '../../common/services/history-range.service';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { AdvanceService } from '../../common/services/advance.service';
 import { PricingContextService } from '../pricing/pricing-context.service';
+import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import type { CreateOrderDto, OrderReceiptDto, UpdateOrderStatusDto } from './dto/order.dto';
+import type {
+  CreateOrderDto,
+  OrderReceiptDto,
+  ReceiveOrderDto,
+  UpdateOrderStatusDto,
+} from './dto/order.dto';
 
 const D = (value: Decimal) => new Prisma.Decimal(value.toFixed());
 
@@ -58,27 +65,62 @@ export class OrdersService {
     private readonly businessDay: BusinessDayService,
     private readonly advance: AdvanceService,
     private readonly pricingContext: PricingContextService,
+    private readonly range: HistoryRangeService,
   ) {}
 
-  private resolveReceipt(
-    dto: OrderReceiptDto,
+  /**
+   * Resolve every leg of one receipt.
+   *
+   * A customer may put down a deposit part in cash and part by transfer, in
+   * more than one currency. Each leg converts at its own rate; the change is
+   * taken on the TOTAL and charged to the last leg, so the legs still sum to
+   * exactly what was received.
+   */
+  private resolveReceipts(
+    lines: OrderReceiptDto[],
     rates: Parameters<typeof PricingContextService.rateFor>[0],
     owed: Decimal,
   ) {
-    if (dto.method === 'BANK' && !dto.bankAccountId) {
-      throw new BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
+    if (lines.length === 0) {
+      throw new BadRequestException('ຕ້ອງມີລາຍການຮັບເງິນຢ່າງໜ້ອຍ 1 ລາຍການ');
     }
 
-    const amount = dec(dto.amount);
-    if (!amount.isFinite() || amount.lte(0)) {
-      throw new BadRequestException('ຈຳນວນເງິນຕ້ອງໃຫຍ່ກວ່າ 0');
+    const resolved = lines.map((dto) => {
+      if (dto.method === 'BANK' && !dto.bankAccountId) {
+        throw new BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
+      }
+
+      const amount = dec(dto.amount);
+      if (!amount.isFinite() || amount.lte(0)) {
+        throw new BadRequestException('ຈຳນວນເງິນຕ້ອງໃຫຍ່ກວ່າ 0');
+      }
+
+      const rate = PricingContextService.rateFor(rates, dto.currency, 'sell');
+      return { ...dto, amount, rate, amountLak: amount.mul(rate), changeLak: dec(0) };
+    });
+
+    const totalLak = resolved.reduce((sum, l) => sum.plus(l.amountLak), dec(0));
+    const changeLak = totalLak.gt(owed) ? totalLak.minus(owed) : dec(0);
+    if (changeLak.gt(0)) resolved[resolved.length - 1]!.changeLak = changeLak;
+
+    return { lines: resolved, totalLak, changeLak, applied: totalLak.minus(changeLak) };
+  }
+
+  /** The legs of a request, however the client spelled them. */
+  private receiptLines(dto: {
+    receipt?: OrderReceiptDto;
+    receipts?: OrderReceiptDto[];
+    method?: string;
+    bankAccountId?: string;
+    currency?: string;
+    amount?: string;
+  }): OrderReceiptDto[] {
+    if (dto.receipts?.length) return dto.receipts;
+    if (dto.receipt) return [dto.receipt];
+    if (dto.method && dto.currency && dto.amount) {
+      return [dto as unknown as OrderReceiptDto];
     }
-
-    const rate = PricingContextService.rateFor(rates, dto.currency, 'sell');
-    const amountLak = amount.mul(rate);
-    const changeLak = amountLak.gt(owed) ? amountLak.minus(owed) : dec(0);
-
-    return { amount, rate, amountLak, changeLak, applied: amountLak.minus(changeLak) };
+    return [];
   }
 
   async create(dto: CreateOrderDto, user: AuthenticatedUser) {
@@ -87,7 +129,7 @@ export class OrdersService {
     const totalAmount = dec(dto.totalAmount);
     if (totalAmount.lte(0)) throw new BadRequestException('ຍອດລວມຕ້ອງໃຫຍ່ກວ່າ 0');
 
-    const receipt = this.resolveReceipt(dto.receipt, context.rates, totalAmount);
+    const receipt = this.resolveReceipts(this.receiptLines(dto), context.rates, totalAmount);
     const day = await this.businessDay.current();
 
     const customer = await this.prisma.customer.upsert({
@@ -114,17 +156,17 @@ export class OrdersService {
           note: dto.note ?? null,
           createdById: user.id,
           receipts: {
-            create: {
-              method: dto.receipt.method,
-              bankAccountId: dto.receipt.bankAccountId ?? null,
-              currency: dto.receipt.currency,
-              rate: D(receipt.rate),
-              amount: D(receipt.amount),
-              amountLak: D(receipt.amountLak),
-              changeLak: D(receipt.changeLak),
+            create: receipt.lines.map((line) => ({
+              method: line.method,
+              bankAccountId: line.bankAccountId ?? null,
+              currency: line.currency,
+              rate: D(line.rate),
+              amount: D(line.amount),
+              amountLak: D(line.amountLak),
+              changeLak: D(line.changeLak),
               isDeposit: true,
               createdById: user.id,
-            },
+            })),
           },
           statusHistory: {
             create: { toStatus: 'ORDER_PLACED', changedById: user.id },
@@ -133,28 +175,35 @@ export class OrdersService {
         include: { receipts: true, customer: true },
       });
 
-      await this.recordReceiptMoney(tx, {
-        method: dto.receipt.method,
-        bankAccountId: dto.receipt.bankAccountId ?? null,
-        currency: dto.receipt.currency,
-        amount: D(receipt.amount),
-        businessDayId: day.id,
-        refId: order.id,
-        note: `ເງິນມັດຈໍາ Order ${order.code}`,
-        createdById: user.id,
-      });
+      // One movement per leg, so Module Cash and Module Bank each show
+      // what actually landed in them.
+      for (const line of receipt.lines) {
+        await this.recordReceiptMoney(tx, {
+          method: line.method,
+          bankAccountId: line.bankAccountId ?? null,
+          currency: line.currency,
+          amount: D(line.amount),
+          businessDayId: day.id,
+          refId: order.id,
+          note: `ເງິນມັດຈໍາ Order ${order.code}`,
+          createdById: user.id,
+        });
+      }
 
-      // ★ Step 1: the deposit is money held, not revenue.
-      await this.advance.post(tx, {
-        orderId: order.id,
-        currency: dto.receipt.currency,
-        amount: receipt.amount,
-        direction: 'IN',
-        method: dto.receipt.method,
-        bankAccountId: dto.receipt.bankAccountId ?? null,
-        note: `ເງິນມັດຈໍາ Order ${order.code}`,
-        createdById: user.id,
-      });
+      // ★ Step 1: the deposit is money held, not revenue. One entry per
+      // leg, because Advance is reported per currency.
+      for (const line of receipt.lines) {
+        await this.advance.post(tx, {
+          orderId: order.id,
+          currency: line.currency,
+          amount: line.amount,
+          direction: 'IN',
+          method: line.method,
+          bankAccountId: line.bankAccountId ?? null,
+          note: `ເງິນມັດຈໍາ Order ${order.code}`,
+          createdById: user.id,
+        });
+      }
 
       await this.audit.record(
         {
@@ -253,7 +302,7 @@ export class OrdersService {
    * When the balance reaches zero the order auto-completes and the deposit
    * liability is released — TOR §7 step 2.
    */
-  async addReceipt(id: string, dto: OrderReceiptDto, user: AuthenticatedUser) {
+  async addReceipt(id: string, dto: ReceiveOrderDto, user: AuthenticatedUser) {
     const order = await this.prisma.order.findFirst({ where: { id, deletedAt: null } });
     if (!order) throw new NotFoundException('ບໍ່ພົບ Order');
     if (order.status === 'COMPLETED' || order.status === 'CANCELLED') {
@@ -262,7 +311,7 @@ export class OrdersService {
 
     const context = await this.pricingContext.load();
     const balance = dec(order.balanceAmount.toFixed());
-    const receipt = this.resolveReceipt(dto, context.rates, balance);
+    const receipt = this.resolveReceipts(this.receiptLines(dto), context.rates, balance);
     const day = await this.businessDay.current();
 
     const received = dec(order.receivedAmount.toFixed()).plus(receipt.applied);
@@ -271,42 +320,47 @@ export class OrdersService {
     const settled = remaining.lte(0);
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.orderReceipt.create({
-        data: {
-          orderId: id,
-          method: dto.method,
-          bankAccountId: dto.bankAccountId ?? null,
-          currency: dto.currency,
-          rate: D(receipt.rate),
-          amount: D(receipt.amount),
-          amountLak: D(receipt.amountLak),
-          changeLak: D(receipt.changeLak),
+      for (const line of receipt.lines) {
+        await tx.orderReceipt.create({
+          data: {
+            orderId: id,
+            method: line.method,
+            bankAccountId: line.bankAccountId ?? null,
+            currency: line.currency,
+            rate: D(line.rate),
+            amount: D(line.amount),
+            amountLak: D(line.amountLak),
+            changeLak: D(line.changeLak),
+            createdById: user.id,
+          },
+        });
+
+        await this.recordReceiptMoney(tx, {
+          method: line.method,
+          bankAccountId: line.bankAccountId ?? null,
+          currency: line.currency,
+          amount: D(line.amount),
+          businessDayId: day.id,
+          refId: order.id,
+          note: `ຊຳຣະ Order ${order.code}`,
           createdById: user.id,
-        },
-      });
+        });
+      }
 
-      await this.recordReceiptMoney(tx, {
-        method: dto.method,
-        bankAccountId: dto.bankAccountId ?? null,
-        currency: dto.currency,
-        amount: D(receipt.amount),
-        businessDayId: day.id,
-        refId: order.id,
-        note: `ຊຳຣະ Order ${order.code}`,
-        createdById: user.id,
-      });
-
-      // The extra payment is still money held until the goods are handed over.
-      await this.advance.post(tx, {
-        orderId: order.id,
-        currency: dto.currency,
-        amount: receipt.amount,
-        direction: 'IN',
-        method: dto.method,
-        bankAccountId: dto.bankAccountId ?? null,
-        note: `ຊຳຣະເພີ່ມ Order ${order.code}`,
-        createdById: user.id,
-      });
+      // The extra payment is still money held until the goods are handed
+      // over. One entry per leg, because Advance is reported per currency.
+      for (const line of receipt.lines) {
+        await this.advance.post(tx, {
+          orderId: order.id,
+          currency: line.currency,
+          amount: line.amount,
+          direction: 'IN',
+          method: line.method,
+          bankAccountId: line.bankAccountId ?? null,
+          note: `ຊຳຣະເພີ່ມ Order ${order.code}`,
+          createdById: user.id,
+        });
+      }
 
       if (settled) {
         // ★ Step 2: obligation discharged — release the whole advance.
@@ -361,19 +415,30 @@ export class OrdersService {
     });
   }
 
-  list(status?: OrderStatus) {
-    return this.prisma.order.findMany({
-      where: { deletedAt: null, ...(status ? { status } : {}) },
-      include: {
-        customer: true,
-        goldItem: true,
-        supplier: true,
-        receipts: { include: { bankAccount: true } },
-        statusHistory: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-    });
+  async list(status: OrderStatus | undefined, query: HistoryRangeDto, user?: AuthenticatedUser) {
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      createdAt: HistoryRangeService.window(range),
+      ...(status ? { status } : {}),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.order.findMany({
+        where,
+        include: {
+          customer: true,
+          goldItem: true,
+          supplier: true,
+          receipts: { include: { bankAccount: true } },
+          statusHistory: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: range.skip,
+        take: range.take,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return this.range.page(rows, total, range);
   }
 
   private async recordReceiptMoney(

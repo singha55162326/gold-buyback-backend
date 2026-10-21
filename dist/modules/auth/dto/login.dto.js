@@ -1,0 +1,56 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.RefreshDto = exports.LoginDto = void 0;
+const openapi = require("@nestjs/swagger");
+const class_validator_1 = require("class-validator");
+/**
+ * Sign-in carries no format rules beyond "not empty".
+ *
+ * A minimum length here is a rule about how accounts are CREATED, and
+ * enforcing it at sign-in locks out any account that predates the rule or
+ * was made another way. That is not hypothetical: the seeded Financial
+ * Controller is `fc`, two characters, and a MinLength(3) here meant that
+ * account could never sign in at all — the UI reported "ຊື່ຜູ້ໃຊ້ສັ້ນເກີນໄປ"
+ * for a username the system had issued itself.
+ *
+ * The length rule still applies where it belongs, on CreateUserDto.
+ */
+class LoginDto {
+    username;
+    password;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { username: { required: true, type: () => String }, password: { required: true, type: () => String } };
+    }
+}
+exports.LoginDto = LoginDto;
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)({ message: 'ກະລຸນາປ້ອນຊື່ຜູ້ໃຊ້' }),
+    __metadata("design:type", String)
+], LoginDto.prototype, "username", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)({ message: 'ກະລຸນາປ້ອນລະຫັດຜ່ານ' }),
+    __metadata("design:type", String)
+], LoginDto.prototype, "password", void 0);
+class RefreshDto {
+    refreshToken;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { refreshToken: { required: true, type: () => String } };
+    }
+}
+exports.RefreshDto = RefreshDto;
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], RefreshDto.prototype, "refreshToken", void 0);
+//# sourceMappingURL=login.dto.js.map

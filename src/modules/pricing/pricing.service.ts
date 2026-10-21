@@ -50,8 +50,10 @@ export class PricingService {
    * Passing them into the engine is what makes ຫັກອອກ (%) tunable without
    * a code change.
    */
-  private async currentDeductions(): Promise<Record<string, DeductionRule>> {
-    const rules = await this.prisma.buybackDeductionRule.findMany({
+  private async currentDeductions(
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<Record<string, DeductionRule>> {
+    const rules = await client.buybackDeductionRule.findMany({
       orderBy: { effectiveAt: 'desc' },
     });
     const latest: Record<string, DeductionRule> = {};
@@ -115,12 +117,19 @@ export class PricingService {
    * updated in place, so a transaction priced yesterday keeps yesterday's
    * numbers forever.
    */
-  async setPricing(dto: SetPricingDto, actorId: string) {
+  /**
+   * `outerTx` ໃຫ້ຜູ້ເອີ້ນມັດການຂຽນ snapshot ເຂົ້າກັບທຸລະກຳຂອງຕົນໄດ້.
+   *
+   * ຈຳເປັນ ເພາະການແກ້ຄ່າຫັກ ຕ້ອງໄດ້ "ກົດໃໝ່ + ລາຄາໃໝ່" ພ້ອມກັນ ຫຼື ບໍ່ໄດ້ທັງ
+   * ສອງຢ່າງ — ຖ້າແຍກກັນ ແລ້ວການຄຳນວນລົ້ມ, ຄ່າຫັກຈະຖືກບັນທຶກໄວ້ໂດຍທີ່ລາຄາ
+   * ຊື້ຄືນຍັງເປັນອັນເກົ່າ ແລະ ປະຫວັດບໍ່ມີແຖວໃດບອກ.
+   */
+  async setPricing(dto: SetPricingDto, actorId: string, outerTx?: Prisma.TransactionClient) {
     const price1Baht = this.parsePrice(dto.price1Baht);
-    const deductions = await this.currentDeductions();
+    const deductions = await this.currentDeductions(outerTx);
     const board = buildPriceBoard(price1Baht, { deductions });
 
-    const snapshot = await this.prisma.$transaction(async (tx) => {
+    const write = async (tx: Prisma.TransactionClient) => {
       const created = await tx.priceSnapshot.create({
         data: {
           price1Baht: new Prisma.Decimal(board.price1Baht.toFixed()),
@@ -158,16 +167,60 @@ export class PricingService {
       );
 
       return created;
-    });
+    };
+
+    const snapshot = outerTx ? await write(outerTx) : await this.prisma.$transaction(write);
 
     return { id: snapshot.id, ...presentBoard(board) };
   }
 
-  /** History Products — TOR §3.1 specifies 30 rows. */
+
+  /**
+   * Recompute the whole board from the CURRENT ລາຄາຂາຍ 1 ບາດ and whatever
+   * ຫັກອອກ (%) / ລາຄາລົບອອກ are set right now, then save it.
+   *
+   * Editing a deduction does not, on its own, move any price: the board is a
+   * snapshot, so the figures the shop quotes stay on the old rule until a new
+   * snapshot is written. Before this, the only way to apply a deduction
+   * change was to retype the gold price on Set Pricing — and retyping it is
+   * how a digit gets lost. This re-runs the same calculation with nothing
+   * typed at all.
+   */
+  async recalculate(actorId: string, reasonLo?: string, outerTx?: Prisma.TransactionClient) {
+    const client = outerTx ?? this.prisma;
+    const latest = await client.priceSnapshot.findFirst({
+      orderBy: { effectiveAt: 'desc' },
+    });
+    if (!latest) {
+      throw new NotFoundException('ຍັງບໍ່ມີການຕັ້ງລາຄາ — ຕັ້ງລາຄາຂາຍ 1 ບາດ ກ່ອນ');
+    }
+
+    return this.setPricing(
+      {
+        price1Baht: latest.price1Baht.toFixed(),
+        // ໝາຍເຫດບອກວ່າ "ເປັນຫຍັງລາຄາຊື້ຄືນຈຶ່ງປ່ຽນ ທັ້ງທີ່ລາຄາຄຳບໍ່ປ່ຽນ" —
+        // ຖ້າບໍ່ມີ, ປະຫວັດຈະເຫັນແຕ່ແຖວລາຄາ 1 ບາດ ຄືເກົ່າຊ້ຳກັນ ແລະ ອ່ານບໍ່ອອກ.
+        note: reasonLo ?? 'Refresh — ຄຳນວນຄືນຕາມ ຫັກອອກ (%) / ລາຄາລົບອອກ ປັດຈຸບັນ',
+      },
+      actorId,
+      outerTx,
+    );
+  }
+
+  /**
+   * History Products — TOR §3.1 specifies 30 rows.
+   *
+   * ແຕ່ລະແຖວພາ ລາຄາຂາຍ / ລາຄາຊື້ຄືນ ຕໍ່ນ້ຳໜັກ ຂອງ snapshot ນັ້ນມານຳ, ເພາະ
+   * ລາຄາຊື້ຄືນ ປ່ຽນໄດ້ທັ້ງທີ່ ລາຄາ 1 ບາດ ຄືເກົ່າ (ເມື່ອແກ້ຄ່າຫັກ) — ປະຫວັດ
+   * ທີ່ມີແຕ່ລາຄາ 1 ບາດ ຈຶ່ງຕອບບໍ່ໄດ້ວ່າ ມື້ນັ້ນຮ້ານຊື້ຄືນລາຄາເທົ່າໃດ.
+   */
   async history(limit = 30) {
     const rows = await this.prisma.priceSnapshot.findMany({
       orderBy: { effectiveAt: 'desc' },
       take: Math.min(limit, 200),
+      include: {
+        lines: { include: { tier: true }, orderBy: { tier: { sortOrder: 'asc' } } },
+      },
     });
     const users = await this.prisma.user.findMany({
       where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
@@ -181,6 +234,14 @@ export class PricingService {
       price1Baht: row.price1Baht.toFixed(),
       updatedBy: nameById.get(row.createdById) ?? '—',
       note: row.note,
+      lines: row.lines.map((line) => ({
+        tierCode: line.tierCode,
+        labelLo: line.tier.labelLo,
+        category: line.tier.category,
+        displayWeightG: line.tier.displayWeightG.toFixed(),
+        sellPrice: line.sellPrice.toFixed(),
+        buybackPrice: line.buybackPrice.toFixed(),
+      })),
     }));
   }
 }
