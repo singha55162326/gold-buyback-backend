@@ -242,36 +242,37 @@ let FeesService = class FeesService {
         if (dto.kind === 'PERCENT' && (value.lt(0) || value.gte(100))) {
             throw new common_1.BadRequestException('ຫັກອອກ (%) ຕ້ອງຢູ່ລະຫວ່າງ 0 ຫາ 100');
         }
-        const created = await this.prisma.buybackDeductionRule.create({
-            data: {
-                tierCode: dto.tierCode,
-                kind: dto.kind,
-                value: this.toDecimal(dto.value, 'ຄ່າຫັກ'),
-                createdById: actorId,
-            },
-        });
-        await this.audit.record({
-            actorId, action: 'UPDATE', entity: 'BuybackDeductionRule', entityId: created.id,
-            after: created,
-            summary: `ອັບເດດຄ່າຫັກຊື້ຄືນ ${tier.labelLo}`,
-        });
         /*
-         * Re-price immediately.
+         * ກົດຄ່າຫັກໃໝ່ ແລະ ລາຄາໃໝ່ ຂຽນພ້ອມກັນໃນທຸລະກຳດຽວ.
          *
-         * ລາຄາຊື້ຄືນ is derived from this rule, but it is READ from a price
-         * snapshot — so changing the rule used to leave every quoted buyback
-         * price on the old figure until someone retyped the gold price. The
-         * shop would have edited the rule, seen ຈັດການ Products unchanged, and
-         * reasonably concluded the edit had not saved.
+         * ລາຄາຊື້ຄືນ ຄິດມາຈາກກົດນີ້ ແຕ່ຖືກ "ອ່ານ" ຈາກ price snapshot — ສະນັ້ນ
+         * ການແກ້ກົດຢ່າງດຽວ ເຄີຍເຮັດໃຫ້ລາຄາທີ່ຮ້ານອ້າງຍັງເປັນອັນເກົ່າ ຈົນກວ່າຈະ
+         * ມີຄົນພິມລາຄາຄຳຄືນໃໝ່. ການມັດສອງຢ່າງໄວ້ນຳກັນ ຍັງປິດຊ່ອງທີ່ກົດຖືກບັນທຶກ
+         * ແລ້ວການຄຳນວນລົ້ມ — ຊຶ່ງຈະເຫັນເປັນ "ຄ່າປ່ຽນແລ້ວ ແຕ່ປະຫວັດລາຄາບໍ່ຂຶ້ນ".
          *
-         * Both tables are append-only, so this keeps BOTH histories: the rule
-         * change is its own row, and the re-priced board is a new snapshot
-         * beside the old ones. Nothing is overwritten and every past quote can
-         * still be re-derived from the snapshot that was current at the time.
+         * ສອງຕາຕະລາງເປັນ append-only ຈຶ່ງເກັບທັງສອງປະຫວັດ: ການແກ້ກົດເປັນແຖວຂອງ
+         * ມັນເອງ ແລະ ກະດານລາຄາໃໝ່ເປັນ snapshot ໃໝ່ຢູ່ຂ້າງອັນເກົ່າ — ບໍ່ມີການທັບ
+         * ແຖວໃດ ແລະ ລາຄາທີ່ເຄີຍອ້າງໄປແລ້ວ ຍັງຄົ້ນຄືນໄດ້ຄົບ.
          */
-        const board = await this.pricing.recalculate(actorId, dto.kind === 'PERCENT'
-            ? `ຄ່າຫັກ ${tier.labelLo} = ${created.value.toFixed()}% — ຄຳນວນລາຄາຊື້ຄືນຄືນ`
-            : `ລາຄາລົບອອກ ${tier.labelLo} = ${created.value.toFixed(0)} — ຄຳນວນລາຄາຊື້ຄືນຄືນ`);
+        const { created, board } = await this.prisma.$transaction(async (tx) => {
+            const rule = await tx.buybackDeductionRule.create({
+                data: {
+                    tierCode: dto.tierCode,
+                    kind: dto.kind,
+                    value: this.toDecimal(dto.value, 'ຄ່າຫັກ'),
+                    createdById: actorId,
+                },
+            });
+            const repriced = await this.pricing.recalculate(actorId, dto.kind === 'PERCENT'
+                ? `ຄ່າຫັກ ${tier.labelLo} = ${rule.value.toFixed()}% — ຄຳນວນລາຄາຊື້ຄືນຄືນ`
+                : `ລາຄາລົບອອກ ${tier.labelLo} = ${rule.value.toFixed(0)} — ຄຳນວນລາຄາຊື້ຄືນຄືນ`, tx);
+            await this.audit.record({
+                actorId, action: 'UPDATE', entity: 'BuybackDeductionRule', entityId: rule.id,
+                after: rule,
+                summary: `ອັບເດດຄ່າຫັກຊື້ຄືນ ${tier.labelLo}`,
+            }, tx);
+            return { created: rule, board: repriced };
+        });
         return { ...created, board };
     }
 };

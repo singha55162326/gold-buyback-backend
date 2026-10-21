@@ -53,8 +53,8 @@ let PricingService = class PricingService {
      * Passing them into the engine is what makes ຫັກອອກ (%) tunable without
      * a code change.
      */
-    async currentDeductions() {
-        const rules = await this.prisma.buybackDeductionRule.findMany({
+    async currentDeductions(client = this.prisma) {
+        const rules = await client.buybackDeductionRule.findMany({
             orderBy: { effectiveAt: 'desc' },
         });
         const latest = {};
@@ -115,11 +115,18 @@ let PricingService = class PricingService {
      * updated in place, so a transaction priced yesterday keeps yesterday's
      * numbers forever.
      */
-    async setPricing(dto, actorId) {
+    /**
+     * `outerTx` ໃຫ້ຜູ້ເອີ້ນມັດການຂຽນ snapshot ເຂົ້າກັບທຸລະກຳຂອງຕົນໄດ້.
+     *
+     * ຈຳເປັນ ເພາະການແກ້ຄ່າຫັກ ຕ້ອງໄດ້ "ກົດໃໝ່ + ລາຄາໃໝ່" ພ້ອມກັນ ຫຼື ບໍ່ໄດ້ທັງ
+     * ສອງຢ່າງ — ຖ້າແຍກກັນ ແລ້ວການຄຳນວນລົ້ມ, ຄ່າຫັກຈະຖືກບັນທຶກໄວ້ໂດຍທີ່ລາຄາ
+     * ຊື້ຄືນຍັງເປັນອັນເກົ່າ ແລະ ປະຫວັດບໍ່ມີແຖວໃດບອກ.
+     */
+    async setPricing(dto, actorId, outerTx) {
         const price1Baht = this.parsePrice(dto.price1Baht);
-        const deductions = await this.currentDeductions();
+        const deductions = await this.currentDeductions(outerTx);
         const board = (0, domain_1.buildPriceBoard)(price1Baht, { deductions });
-        const snapshot = await this.prisma.$transaction(async (tx) => {
+        const write = async (tx) => {
             const created = await tx.priceSnapshot.create({
                 data: {
                     price1Baht: new client_1.Prisma.Decimal(board.price1Baht.toFixed()),
@@ -152,7 +159,8 @@ let PricingService = class PricingService {
                 summary: `ຕັ້ງລາຄາຂາຍ 1 ບາດ = ${created.price1Baht.toFixed(0)}`,
             }, tx);
             return created;
-        });
+        };
+        const snapshot = outerTx ? await write(outerTx) : await this.prisma.$transaction(write);
         return { id: snapshot.id, ...presentBoard(board) };
     }
     /**
@@ -166,8 +174,9 @@ let PricingService = class PricingService {
      * how a digit gets lost. This re-runs the same calculation with nothing
      * typed at all.
      */
-    async recalculate(actorId, reasonLo) {
-        const latest = await this.prisma.priceSnapshot.findFirst({
+    async recalculate(actorId, reasonLo, outerTx) {
+        const client = outerTx ?? this.prisma;
+        const latest = await client.priceSnapshot.findFirst({
             orderBy: { effectiveAt: 'desc' },
         });
         if (!latest) {
@@ -178,7 +187,7 @@ let PricingService = class PricingService {
             // ໝາຍເຫດບອກວ່າ "ເປັນຫຍັງລາຄາຊື້ຄືນຈຶ່ງປ່ຽນ ທັ້ງທີ່ລາຄາຄຳບໍ່ປ່ຽນ" —
             // ຖ້າບໍ່ມີ, ປະຫວັດຈະເຫັນແຕ່ແຖວລາຄາ 1 ບາດ ຄືເກົ່າຊ້ຳກັນ ແລະ ອ່ານບໍ່ອອກ.
             note: reasonLo ?? 'Refresh — ຄຳນວນຄືນຕາມ ຫັກອອກ (%) / ລາຄາລົບອອກ ປັດຈຸບັນ',
-        }, actorId);
+        }, actorId, outerTx);
     }
     /**
      * History Products — TOR §3.1 specifies 30 rows.
