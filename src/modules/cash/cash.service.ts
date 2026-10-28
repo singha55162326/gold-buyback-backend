@@ -241,13 +241,20 @@ export class CashService {
     });
   }
 
-  listRequests(status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED') {
-    return this.prisma.cashRequest.findMany({
+  async listRequests(status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED') {
+    const rows = await this.prisma.cashRequest.findMany({
       where: { deletedAt: null, ...(status ? { status } : {}) },
       include: { lines: true, shift: { include: { user: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
+    /*
+    * ຜູ້ບັນທຶກ ຢູ່ຕາຕະລາງນີ້ຄື `requestedById` ບໍ່ແມ່ນ `createdById` —
+    * ປ່ຽນຊື່ໃຫ້ກົງກັບ helper ກາງ ເພື່ອບໍ່ໃຫ້ແຕ່ລະ Module ຄຳນວນຊື່ຄົນລະແບບ.
+    */
+    return this.audit.withActorNames(
+      rows.map((row) => ({ ...row, createdById: row.requestedById })),
+    );
   }
 
   /* ---------------------------------------------------------------- *
@@ -416,7 +423,7 @@ export class CashService {
       }),
       this.prisma.cashTransaction.count({ where }),
     ]);
-    return this.range.page(await this.withActorNames(rows), total, range);
+    return this.range.page(await this.audit.withCreatorNames(rows), total, range);
   }
 
   /* ---------------------------------------------------------------- *
@@ -585,23 +592,7 @@ export class CashService {
       }),
       this.prisma.bankTransaction.count({ where }),
     ]);
-    return this.range.page(await this.withActorNames(rows), total, range);
+    return this.range.page(await this.audit.withCreatorNames(rows), total, range);
   }
 
-  /**
-   * ແປະຊື່ຜູ້ລົງລາຍການໃສ່ແຕ່ລະແຖວ.
-   *
-   * ລູກຄ້າຂໍວ່າ ທຸກ Module ທີ່ມີການບັນທຶກ ຕ້ອງເຫັນວ່າ User ໃດເປັນຄົນເຮັດ.
-   * ຕາຕະລາງທຸລະກຳເກັບແຕ່ `createdById` ຈຶ່ງດຶງຊື່ເປັນ query ດຽວຕໍ່ໜ້າ
-   * ແທນການ join ຕໍ່ແຖວ.
-   */
-  private async withActorNames<T extends { createdById: string }>(rows: T[]) {
-    if (rows.length === 0) return [] as Array<T & { createdBy: string }>;
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
-      select: { id: true, fullName: true },
-    });
-    const nameById = new Map(users.map((u) => [u.id, u.fullName]));
-    return rows.map((r) => ({ ...r, createdBy: nameById.get(r.createdById) ?? '—' }));
-  }
 }

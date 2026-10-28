@@ -78,8 +78,8 @@ export class ConsignmentLineDto {
 
 export class CreateConsignmentDto {
   /** ປ້ອນລະຫັດ — the shop's own bill reference. */
-  /** BILL ID — ຕົວເລກ 4 ໂຕ ຕາມໃບບິນເຈ້ຍຂອງຮ້ານ. */
-  @Matches(/^\d{4}$/, { message: 'ລະຫັດ / BILL ID ຕ້ອງເປັນຕົວເລກ 4 ໂຕ' })
+  /** BILL ID — ຕົວເລກ 6 ໂຕ ຕາມໃບບິນເຈ້ຍຂອງຮ້ານ. */
+  @Matches(/^\d{6}$/, { message: 'ລະຫັດ / BILL ID ຕ້ອງເປັນຕົວເລກ 6 ໂຕ' })
   billId: string;
 
   @Matches(/^\d{8}$/, { message: 'ເບີໂທຕ້ອງເປັນຕົວເລກ 8 ໂຕ' })

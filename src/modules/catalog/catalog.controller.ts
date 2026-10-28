@@ -26,8 +26,8 @@ export class CatalogController {
   ) {}
 
   @Get('gold-types')
-  goldTypes(@Query('stockOnly') stockOnly?: string) {
-    return this.catalog.listGoldTypes(stockOnly === 'true');
+  goldTypes(@Query('stockOnly') stockOnly?: string, @Query('withActor') withActor?: string) {
+    return this.catalog.listGoldTypes(stockOnly === 'true', withActor === 'true');
   }
 
   @Roles('ADMIN', 'MANAGER')
@@ -53,8 +53,8 @@ export class CatalogController {
   }
 
   @Get('gold-items')
-  goldItems() {
-    return this.catalog.listGoldItems();
+  goldItems(@Query('withActor') withActor?: string) {
+    return this.catalog.listGoldItems(withActor === 'true');
   }
 
   @Roles('ADMIN', 'MANAGER')
@@ -80,8 +80,8 @@ export class CatalogController {
   }
 
   @Get('cabinets')
-  cabinets() {
-    return this.catalog.listCabinets();
+  cabinets(@Query('withActor') withActor?: string) {
+    return this.catalog.listCabinets(withActor === 'true');
   }
 
   // ບໍ່ສົ່ງວັນທີມາ = ເຫັນຄຳທັງໝົດໃນຕູ້ (ຕູ້ເປັນຍອດຄົງຄ້າງ ບໍ່ແມ່ນປະຫວັດ);
@@ -121,8 +121,8 @@ export class CatalogController {
   }
 
   @Get('partners')
-  partners(@Query('direction') direction?: 'IN' | 'OUT') {
-    return this.catalog.listPartners(direction);
+  partners(@Query('direction') direction?: 'IN' | 'OUT', @Query('withActor') withActor?: string) {
+    return this.catalog.listPartners(direction, withActor === 'true');
   }
 
   @Roles('ADMIN', 'MANAGER')
@@ -148,7 +148,7 @@ export class CatalogController {
   }
 
   @Get('bank-accounts')
-  bankAccounts() {
-    return this.catalog.listBankAccounts();
+  bankAccounts(@Query('withActor') withActor?: string) {
+    return this.catalog.listBankAccounts(withActor === 'true');
   }
 }

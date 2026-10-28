@@ -29,8 +29,8 @@ let CatalogController = class CatalogController {
         this.catalog = catalog;
         this.range = range;
     }
-    goldTypes(stockOnly) {
-        return this.catalog.listGoldTypes(stockOnly === 'true');
+    goldTypes(stockOnly, withActor) {
+        return this.catalog.listGoldTypes(stockOnly === 'true', withActor === 'true');
     }
     createGoldType(dto, user) {
         return this.catalog.createGoldType(dto, user.id);
@@ -41,8 +41,8 @@ let CatalogController = class CatalogController {
     deleteGoldType(id, user) {
         return this.catalog.deleteGoldType(id, user.id);
     }
-    goldItems() {
-        return this.catalog.listGoldItems();
+    goldItems(withActor) {
+        return this.catalog.listGoldItems(withActor === 'true');
     }
     createGoldItem(dto, user) {
         return this.catalog.createGoldItem(dto, user.id);
@@ -53,8 +53,8 @@ let CatalogController = class CatalogController {
     deleteGoldItem(id, user) {
         return this.catalog.deleteGoldItem(id, user.id);
     }
-    cabinets() {
-        return this.catalog.listCabinets();
+    cabinets(withActor) {
+        return this.catalog.listCabinets(withActor === 'true');
     }
     // ບໍ່ສົ່ງວັນທີມາ = ເຫັນຄຳທັງໝົດໃນຕູ້ (ຕູ້ເປັນຍອດຄົງຄ້າງ ບໍ່ແມ່ນປະຫວັດ);
     // ສົ່ງ from_date / to_date ມາ = ເບິ່ງສະເພາະຄຳທີ່ເຂົ້າຕູ້ໃນຊ່ວງນັ້ນ.
@@ -74,8 +74,8 @@ let CatalogController = class CatalogController {
     deleteCabinet(id, user) {
         return this.catalog.deleteCabinet(id, user.id);
     }
-    partners(direction) {
-        return this.catalog.listPartners(direction);
+    partners(direction, withActor) {
+        return this.catalog.listPartners(direction, withActor === 'true');
     }
     createPartner(dto, user) {
         return this.catalog.createPartner(dto, user.id);
@@ -86,18 +86,20 @@ let CatalogController = class CatalogController {
     deletePartner(id, user) {
         return this.catalog.deletePartner(id, user.id);
     }
-    bankAccounts() {
-        return this.catalog.listBankAccounts();
+    bankAccounts(withActor) {
+        return this.catalog.listBankAccounts(withActor === 'true');
     }
 };
 exports.CatalogController = CatalogController;
 __decorate([
     openapi.ApiQuery({ name: "stockOnly", required: false }),
+    openapi.ApiQuery({ name: "withActor", required: false }),
     (0, common_1.Get)('gold-types'),
     openapi.ApiResponse({ status: 200, type: Object }),
     __param(0, (0, common_1.Query)('stockOnly')),
+    __param(1, (0, common_1.Query)('withActor')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "goldTypes", null);
 __decorate([
@@ -132,10 +134,12 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "deleteGoldType", null);
 __decorate([
+    openapi.ApiQuery({ name: "withActor", required: false }),
     (0, common_1.Get)('gold-items'),
     openapi.ApiResponse({ status: 200, type: Object }),
+    __param(0, (0, common_1.Query)('withActor')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "goldItems", null);
 __decorate([
@@ -170,10 +174,12 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "deleteGoldItem", null);
 __decorate([
+    openapi.ApiQuery({ name: "withActor", required: false }),
     (0, common_1.Get)('cabinets'),
     openapi.ApiResponse({ status: 200, type: Object }),
+    __param(0, (0, common_1.Query)('withActor')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "cabinets", null);
 __decorate([
@@ -219,11 +225,13 @@ __decorate([
 ], CatalogController.prototype, "deleteCabinet", null);
 __decorate([
     openapi.ApiQuery({ name: "direction", required: false }),
+    openapi.ApiQuery({ name: "withActor", required: false }),
     (0, common_1.Get)('partners'),
     openapi.ApiResponse({ status: 200, type: Object }),
     __param(0, (0, common_1.Query)('direction')),
+    __param(1, (0, common_1.Query)('withActor')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "partners", null);
 __decorate([
@@ -258,10 +266,12 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "deletePartner", null);
 __decorate([
+    openapi.ApiQuery({ name: "withActor", required: false }),
     (0, common_1.Get)('bank-accounts'),
     openapi.ApiResponse({ status: 200, type: Object }),
+    __param(0, (0, common_1.Query)('withActor')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], CatalogController.prototype, "bankAccounts", null);
 exports.CatalogController = CatalogController = __decorate([

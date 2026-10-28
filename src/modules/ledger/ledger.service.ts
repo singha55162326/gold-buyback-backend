@@ -17,6 +17,7 @@ import type { AuthenticatedUser } from '../../common/decorators/current-user.dec
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { StockLedgerService } from '../../common/services/stock-ledger.service';
 import { AdvanceService } from '../../common/services/advance.service';
+import { AuditService } from '../../common/services/audit.service';
 import { CashService } from '../cash/cash.service';
 import { PricingContextService } from '../pricing/pricing-context.service';
 
@@ -39,7 +40,8 @@ export class LedgerService {
     private readonly cash: CashService,
     private readonly advance: AdvanceService,
     private readonly pricingContext: PricingContextService,
-    private readonly range: HistoryRangeService
+    private readonly range: HistoryRangeService,
+    private readonly audit: AuditService,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -118,7 +120,8 @@ export class LedgerService {
       }),
       this.prisma.cashApArLedger.count({ where }),
     ]);
-    return this.range.page(rows, total, range);
+    // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+    return this.range.page(await this.audit.withCreatorNames(rows), total, range);
   }
 
   /* ---------------------------------------------------------------- *
@@ -237,7 +240,7 @@ export class LedgerService {
       }),
       this.prisma.goldApArLedger.count({ where }),
     ]);
-    return this.range.page(rows, total, range);
+    return this.range.page(await this.audit.withCreatorNames(rows), total, range);
   }
 
   /* ---------------------------------------------------------------- *

@@ -41,8 +41,8 @@ let FinanceController = class FinanceController {
         return this.finance.deleteBankAccount(id, user);
     }
     /* ---- §3.7 ລາຍຮັບ / ລາຍຈ່າຍ ---- */
-    categories(kind) {
-        return this.finance.listIncomeExpenseCategories(kind);
+    categories(kind, withActor) {
+        return this.finance.listIncomeExpenseCategories(kind, withActor === 'true');
     }
     createCategory(dto, user) {
         return this.finance.createIncomeExpenseCategory(dto, user);
@@ -78,8 +78,8 @@ let FinanceController = class FinanceController {
         return this.advance.history(query, user);
     }
     /* ---- §9.1 ລາຍການ AP-AR (Cash) ---- */
-    apArCategories(side) {
-        return this.finance.listApArCategories(side);
+    apArCategories(side, withActor) {
+        return this.finance.listApArCategories(side, withActor === 'true');
     }
     createApArCategory(dto, user) {
         return this.finance.createApArCategory(dto, user);
@@ -142,11 +142,13 @@ __decorate([
 ], FinanceController.prototype, "deleteBankAccount", null);
 __decorate([
     openapi.ApiQuery({ name: "kind", required: false }),
+    openapi.ApiQuery({ name: "withActor", required: false }),
     (0, common_1.Get)('income-expense/categories'),
     openapi.ApiResponse({ status: 200, type: Object }),
     __param(0, (0, common_1.Query)('kind')),
+    __param(1, (0, common_1.Query)('withActor')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "categories", null);
 __decorate([
@@ -251,11 +253,13 @@ __decorate([
 ], FinanceController.prototype, "advanceHistory", null);
 __decorate([
     openapi.ApiQuery({ name: "side", required: false }),
+    openapi.ApiQuery({ name: "withActor", required: false }),
     (0, common_1.Get)('ap-ar/categories'),
     openapi.ApiResponse({ status: 200, type: Object }),
     __param(0, (0, common_1.Query)('side')),
+    __param(1, (0, common_1.Query)('withActor')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "apArCategories", null);
 __decorate([

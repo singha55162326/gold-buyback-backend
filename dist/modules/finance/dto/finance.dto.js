@@ -214,7 +214,7 @@ __decorate([
 ], ConsignmentLineDto.prototype, "quantity", void 0);
 class CreateConsignmentDto {
     /** ປ້ອນລະຫັດ — the shop's own bill reference. */
-    /** BILL ID — ຕົວເລກ 4 ໂຕ ຕາມໃບບິນເຈ້ຍຂອງຮ້ານ. */
+    /** BILL ID — ຕົວເລກ 6 ໂຕ ຕາມໃບບິນເຈ້ຍຂອງຮ້ານ. */
     billId;
     phone;
     customerName;
@@ -222,12 +222,12 @@ class CreateConsignmentDto {
     lines;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { billId: { required: true, type: () => String, description: "\u0E9B\u0EC9\u0EAD\u0E99\u0EA5\u0EB0\u0EAB\u0EB1\u0E94 \u2014 the shop's own bill reference.", pattern: "^\\d{4}$" }, phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, customerName: { required: true, type: () => String, minLength: 1 }, staffName: { required: true, type: () => String, minLength: 1 }, lines: { required: true, type: () => [require("./finance.dto").ConsignmentLineDto], minItems: 1 }, note: { required: false, type: () => String } };
+        return { billId: { required: true, type: () => String, description: "\u0E9B\u0EC9\u0EAD\u0E99\u0EA5\u0EB0\u0EAB\u0EB1\u0E94 \u2014 the shop's own bill reference.", pattern: "^\\d{6}$" }, phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, customerName: { required: true, type: () => String, minLength: 1 }, staffName: { required: true, type: () => String, minLength: 1 }, lines: { required: true, type: () => [require("./finance.dto").ConsignmentLineDto], minItems: 1 }, note: { required: false, type: () => String } };
     }
 }
 exports.CreateConsignmentDto = CreateConsignmentDto;
 __decorate([
-    (0, class_validator_1.Matches)(/^\d{4}$/, { message: 'ລະຫັດ / BILL ID ຕ້ອງເປັນຕົວເລກ 4 ໂຕ' }),
+    (0, class_validator_1.Matches)(/^\d{6}$/, { message: 'ລະຫັດ / BILL ID ຕ້ອງເປັນຕົວເລກ 6 ໂຕ' }),
     __metadata("design:type", String)
 ], CreateConsignmentDto.prototype, "billId", void 0);
 __decorate([

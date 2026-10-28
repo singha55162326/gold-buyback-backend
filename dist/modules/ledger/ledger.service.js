@@ -17,6 +17,7 @@ const history_range_service_1 = require("../../common/services/history-range.ser
 const business_day_service_1 = require("../../common/services/business-day.service");
 const stock_ledger_service_1 = require("../../common/services/stock-ledger.service");
 const advance_service_1 = require("../../common/services/advance.service");
+const audit_service_1 = require("../../common/services/audit.service");
 const cash_service_1 = require("../cash/cash.service");
 const pricing_context_service_1 = require("../pricing/pricing-context.service");
 const CURRENCIES = ['LAK', 'THB', 'USD'];
@@ -36,7 +37,8 @@ let LedgerService = class LedgerService {
     advance;
     pricingContext;
     range;
-    constructor(prisma, businessDay, stockLedger, cash, advance, pricingContext, range) {
+    audit;
+    constructor(prisma, businessDay, stockLedger, cash, advance, pricingContext, range, audit) {
         this.prisma = prisma;
         this.businessDay = businessDay;
         this.stockLedger = stockLedger;
@@ -44,6 +46,7 @@ let LedgerService = class LedgerService {
         this.advance = advance;
         this.pricingContext = pricingContext;
         this.range = range;
+        this.audit = audit;
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — WAC ປັດຈຸບັນ
@@ -106,7 +109,8 @@ let LedgerService = class LedgerService {
             }),
             this.prisma.cashApArLedger.count({ where }),
         ]);
-        return this.range.page(rows, total, range);
+        // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+        return this.range.page(await this.audit.withCreatorNames(rows), total, range);
     }
     /* ---------------------------------------------------------------- *
      * §8 — AP/AR (GOLD)
@@ -206,7 +210,7 @@ let LedgerService = class LedgerService {
             }),
             this.prisma.goldApArLedger.count({ where }),
         ]);
-        return this.range.page(rows, total, range);
+        return this.range.page(await this.audit.withCreatorNames(rows), total, range);
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — COH (Cash On Hand ແລະ Gold On Hand)
@@ -401,6 +405,7 @@ exports.LedgerService = LedgerService = __decorate([
         cash_service_1.CashService,
         advance_service_1.AdvanceService,
         pricing_context_service_1.PricingContextService,
-        history_range_service_1.HistoryRangeService])
+        history_range_service_1.HistoryRangeService,
+        audit_service_1.AuditService])
 ], LedgerService);
 //# sourceMappingURL=ledger.service.js.map

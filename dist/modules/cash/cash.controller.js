@@ -87,7 +87,7 @@ exports.CashController = CashController;
 __decorate([
     openapi.ApiQuery({ name: "status", required: false }),
     (0, common_1.Get)('requests'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200, type: [Object] }),
     __param(0, (0, common_1.Query)('status')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

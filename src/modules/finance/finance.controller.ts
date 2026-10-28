@@ -56,8 +56,8 @@ export class FinanceController {
   /* ---- §3.7 ລາຍຮັບ / ລາຍຈ່າຍ ---- */
 
   @Get('income-expense/categories')
-  categories(@Query('kind') kind?: IncomeExpenseKind) {
-    return this.finance.listIncomeExpenseCategories(kind);
+  categories(@Query('kind') kind?: IncomeExpenseKind, @Query('withActor') withActor?: string) {
+    return this.finance.listIncomeExpenseCategories(kind, withActor === 'true');
   }
 
   @Roles('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER')
@@ -142,8 +142,8 @@ export class FinanceController {
   /* ---- §9.1 ລາຍການ AP-AR (Cash) ---- */
 
   @Get('ap-ar/categories')
-  apArCategories(@Query('side') side?: ApArSide) {
-    return this.finance.listApArCategories(side);
+  apArCategories(@Query('side') side?: ApArSide, @Query('withActor') withActor?: string) {
+    return this.finance.listApArCategories(side, withActor === 'true');
   }
 
   @Roles('ADMIN', 'MANAGER')
