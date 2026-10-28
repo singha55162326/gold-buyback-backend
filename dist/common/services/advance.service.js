@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const business_day_service_1 = require("./business-day.service");
+const audit_service_1 = require("./audit.service");
 const history_range_service_1 = require("./history-range.service");
 const D = (value) => new client_1.Prisma.Decimal(value.toFixed());
 const toDec = (value) => (0, domain_1.dec)(value?.toFixed() ?? 0);
@@ -33,9 +34,11 @@ const toDec = (value) => (0, domain_1.dec)(value?.toFixed() ?? 0);
 let AdvanceService = class AdvanceService {
     prisma;
     range;
-    constructor(prisma, range) {
+    audit;
+    constructor(prisma, range, audit) {
         this.prisma = prisma;
         this.range = range;
+        this.audit = audit;
     }
     async post(tx, input) {
         if (input.amount.lte(0) && !input.allowZero)
@@ -125,7 +128,9 @@ let AdvanceService = class AdvanceService {
             }),
             this.prisma.advanceLedger.count({ where }),
         ]);
-        return this.range.page(rows.map((row) => {
+        // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+        const withActors = await this.audit.withCreatorNames(rows);
+        return this.range.page(withActors.map((row) => {
             /*
              * ຍອດເງິນສຸດທິ = ຍອດເງິນທີ່ໄດ້ຮັບ − ຍອດຄົງເຫຼືອຮັບ − ຍອດເງິນຕັດຊຳລະ
              * ຕາມທີ່ລູກຄ້າກຳນົດ. ຄຳນວນຢູ່ server ເພື່ອບໍ່ໃຫ້ສອງໜ້າຈໍຄຳນວນຄົນລະແບບ.
@@ -145,6 +150,7 @@ exports.AdvanceService = AdvanceService;
 exports.AdvanceService = AdvanceService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        history_range_service_1.HistoryRangeService])
+        history_range_service_1.HistoryRangeService,
+        audit_service_1.AuditService])
 ], AdvanceService);
 //# sourceMappingURL=advance.service.js.map

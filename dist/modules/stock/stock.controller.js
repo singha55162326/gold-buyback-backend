@@ -108,7 +108,7 @@ __decorate([
     openapi.ApiQuery({ name: "scope", required: false }),
     openapi.ApiQuery({ name: "status", required: false }),
     (0, common_1.Get)('movements'),
-    openapi.ApiResponse({ status: 200, type: Object }),
+    openapi.ApiResponse({ status: 200, type: [Object] }),
     __param(0, (0, common_1.Query)('scope')),
     __param(1, (0, common_1.Query)('status')),
     __metadata("design:type", Function),

@@ -36,8 +36,8 @@ export class AdminService {
    * User Setting
    * ---------------------------------------------------------------- */
 
-  listUsers() {
-    return this.prisma.user.findMany({
+  async listUsers() {
+    const rows = await this.prisma.user.findMany({
       where: { deletedAt: null },
       select: {
         id: true,
@@ -53,6 +53,8 @@ export class AdminService {
       },
       orderBy: [{ role: 'asc' }, { username: 'asc' }],
     });
+    // ຜູ້ບັນທຶກ — ຕາຕະລາງຜູ້ໃຊ້ບໍ່ມີຖັນນີ້ ຈຶ່ງອ່ານຈາກ Audit Log.
+    return this.audit.withCreatorsFromAudit('User', rows);
   }
 
   async createUser(dto: CreateUserDto, actor: AuthenticatedUser) {

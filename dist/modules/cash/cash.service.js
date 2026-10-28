@@ -202,13 +202,18 @@ let CashService = class CashService {
             return updated;
         });
     }
-    listRequests(status) {
-        return this.prisma.cashRequest.findMany({
+    async listRequests(status) {
+        const rows = await this.prisma.cashRequest.findMany({
             where: { deletedAt: null, ...(status ? { status } : {}) },
             include: { lines: true, shift: { include: { user: true } } },
             orderBy: { createdAt: 'desc' },
             take: 200,
         });
+        /*
+        * ຜູ້ບັນທຶກ ຢູ່ຕາຕະລາງນີ້ຄື `requestedById` ບໍ່ແມ່ນ `createdById` —
+        * ປ່ຽນຊື່ໃຫ້ກົງກັບ helper ກາງ ເພື່ອບໍ່ໃຫ້ແຕ່ລະ Module ຄຳນວນຊື່ຄົນລະແບບ.
+        */
+        return this.audit.withActorNames(rows.map((row) => ({ ...row, createdById: row.requestedById })));
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — Module Cash
@@ -367,7 +372,7 @@ let CashService = class CashService {
             }),
             this.prisma.cashTransaction.count({ where }),
         ]);
-        return this.range.page(await this.withActorNames(rows), total, range);
+        return this.range.page(await this.audit.withCreatorNames(rows), total, range);
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — Module Bank
@@ -517,24 +522,7 @@ let CashService = class CashService {
             }),
             this.prisma.bankTransaction.count({ where }),
         ]);
-        return this.range.page(await this.withActorNames(rows), total, range);
-    }
-    /**
-     * ແປະຊື່ຜູ້ລົງລາຍການໃສ່ແຕ່ລະແຖວ.
-     *
-     * ລູກຄ້າຂໍວ່າ ທຸກ Module ທີ່ມີການບັນທຶກ ຕ້ອງເຫັນວ່າ User ໃດເປັນຄົນເຮັດ.
-     * ຕາຕະລາງທຸລະກຳເກັບແຕ່ `createdById` ຈຶ່ງດຶງຊື່ເປັນ query ດຽວຕໍ່ໜ້າ
-     * ແທນການ join ຕໍ່ແຖວ.
-     */
-    async withActorNames(rows) {
-        if (rows.length === 0)
-            return [];
-        const users = await this.prisma.user.findMany({
-            where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
-            select: { id: true, fullName: true },
-        });
-        const nameById = new Map(users.map((u) => [u.id, u.fullName]));
-        return rows.map((r) => ({ ...r, createdBy: nameById.get(r.createdById) ?? '—' }));
+        return this.range.page(await this.audit.withCreatorNames(rows), total, range);
     }
 };
 exports.CashService = CashService;

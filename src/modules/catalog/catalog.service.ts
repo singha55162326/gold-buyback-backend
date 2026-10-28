@@ -44,11 +44,16 @@ export class CatalogService {
 
   // --- ປະເພດຄຳ -------------------------------------------------------------
 
-  listGoldTypes(stockOnly = false) {
-    return this.prisma.goldType.findMany({
+  /**
+   * `withActor` ແປະຊື່ຜູ້ບັນທຶກໃສ່ແຕ່ລະແຖວ — ເປີດໃຊ້ແຕ່ໜ້າ Admin ທີ່ສະແດງ
+   * ຕາຕະລາງ, ບໍ່ແມ່ນ dropdown ທົ່ວລະບົບ ເພື່ອບໍ່ໃຫ້ມີ query ເພີ່ມທຸກບ່ອນ.
+   */
+  async listGoldTypes(stockOnly = false, withActor = false) {
+    const rows = await this.prisma.goldType.findMany({
       where: { deletedAt: null, isActive: true, ...(stockOnly ? { isStockType: true } : {}) },
       orderBy: { sortOrder: 'asc' },
     });
+    return withActor ? this.audit.withCreatorsFromAudit('GoldType', rows) : rows;
   }
 
   async createGoldType(data: { nameLo: string; isStockType?: boolean }, actorId: string) {
@@ -71,11 +76,12 @@ export class CatalogService {
 
   // --- ລາຍການຄຳ -----------------------------------------------------------
 
-  listGoldItems() {
-    return this.prisma.goldItem.findMany({
+  async listGoldItems(withActor = false) {
+    const rows = await this.prisma.goldItem.findMany({
       where: { deletedAt: null, isActive: true },
       orderBy: { sortOrder: 'asc' },
     });
+    return withActor ? this.audit.withCreatorsFromAudit('GoldItem', rows) : rows;
   }
 
   async createGoldItem(data: { nameLo: string }, actorId: string) {
@@ -97,11 +103,12 @@ export class CatalogService {
 
   // --- ຕູ້ເຄື່ອງ -------------------------------------------------------------
 
-  listCabinets() {
-    return this.prisma.cabinet.findMany({
+  async listCabinets(withActor = false) {
+    const rows = await this.prisma.cabinet.findMany({
       where: { deletedAt: null, isActive: true },
       orderBy: { code: 'asc' },
     });
+    return withActor ? this.audit.withCreatorsFromAudit('Cabinet', rows) : rows;
   }
 
   async createCabinet(data: { nameLo: string }, actorId: string) {
@@ -150,8 +157,8 @@ export class CatalogService {
 
   // --- ແຫຼ່ງຮັບເຂົ້າ / ແຫຼ່ງສົ່ງອອກ -------------------------------------------
 
-  listPartners(direction?: 'IN' | 'OUT') {
-    return this.prisma.partnerSource.findMany({
+  async listPartners(direction?: 'IN' | 'OUT', withActor = false) {
+    const rows = await this.prisma.partnerSource.findMany({
       where: {
         deletedAt: null,
         isActive: true,
@@ -159,6 +166,7 @@ export class CatalogService {
       },
       orderBy: { sortOrder: 'asc' },
     });
+    return withActor ? this.audit.withCreatorsFromAudit('PartnerSource', rows) : rows;
   }
 
   async createPartner(
@@ -185,11 +193,12 @@ export class CatalogService {
 
   // --- ທະນາຄານ -------------------------------------------------------------
 
-  listBankAccounts() {
-    return this.prisma.bankAccount.findMany({
+  async listBankAccounts(withActor = false) {
+    const rows = await this.prisma.bankAccount.findMany({
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
     });
+    return withActor ? this.audit.withCreatorsFromAudit('BankAccount', rows) : rows;
   }
 
   // --- ແກ້ໄຂ / ລຶບ ----------------------------------------------------------

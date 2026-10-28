@@ -274,9 +274,11 @@ export class FeesService {
       orderBy: { effectiveAt: 'desc' },
       include: { tier: true },
     });
-    return this.newestPerKey(rows, (r) => r.tierCode).sort(
+    const current = this.newestPerKey(rows, (r) => r.tierCode).sort(
       (a, b) => a.tier.sortOrder - b.tier.sortOrder,
     );
+    // ຜູ້ບັນທຶກຄ່າທີ່ໃຊ້ຢູ່ປັດຈຸບັນ — ແຕ່ລະແຖວຄືກົດລ່າສຸດຂອງນ້ຳໜັກນັ້ນ.
+    return this.audit.withCreatorNames(current);
   }
 
   async updateDeduction(dto: UpdateDeductionDto, actorId: string) {

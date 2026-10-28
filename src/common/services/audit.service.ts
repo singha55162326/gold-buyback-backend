@@ -21,6 +21,9 @@ export interface AuditEntry {
  */
 @Injectable()
 export class AuditService {
+  /** ຜູ້ບັນທຶກ ຂອງຂໍ້ມູນຕັ້ງຕົ້ນທີ່ມາພ້ອມການຕິດຕັ້ງລະບົບ. */
+  static readonly SEEDED_BY = 'ຕິດຕັ້ງເບື້ອງຕົ້ນ';
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -31,16 +34,22 @@ export class AuditService {
    * but those columns are plain id strings rather than relations — keeping
    * them unlinked avoids a foreign key on every transactional table purely
    * for a label.
+   *
+   * Two different questions get two different fields, because the answers
+   * differ on any record that was reviewed by someone other than its author:
+   * `createdBy` = ຜູ້ບັນທຶກ (ຜູ້ລົງລາຍການ), `updatedBy` = ມືສຸດທ້າຍ.
    */
-  async withActorNames<T extends { createdById?: string; approvedById?: string | null }>(
+  async withActorNames<T extends { createdById?: string | null; approvedById?: string | null }>(
     rows: T[],
-  ): Promise<Array<T & { updatedBy: string }>> {
+  ): Promise<Array<T & { createdBy: string; updatedBy: string }>> {
     const ids = [
       ...new Set(
         rows.flatMap((r) => [r.createdById, r.approvedById]).filter((v): v is string => Boolean(v)),
       ),
     ];
-    if (ids.length === 0) return rows.map((r) => ({ ...r, updatedBy: '—' }));
+    if (ids.length === 0) {
+      return rows.map((r) => ({ ...r, createdBy: '—', updatedBy: '—' }));
+    }
 
     const users = await this.prisma.user.findMany({
       where: { id: { in: ids } },
@@ -52,10 +61,65 @@ export class AuditService {
     // creator when it has not been reviewed yet.
     return rows.map((r) => ({
       ...r,
+      createdBy: (r.createdById ? nameById.get(r.createdById) : undefined) ?? '—',
       updatedBy:
         (r.approvedById ? nameById.get(r.approvedById) : undefined) ??
         (r.createdById ? nameById.get(r.createdById) : undefined) ??
         '—',
+    }));
+  }
+
+  /**
+   * ແປະຊື່ **ຜູ້ບັນທຶກ** ໃສ່ແຖວທີ່ບໍ່ມີຂັ້ນຕອນອະນຸມັດ (ບັນຊີ, ສາງ, ຝາກສິນຄ້າ ຯລ).
+   *
+   * ລູກຄ້າຂໍວ່າ ທຸກ Module ທີ່ມີການສ້າງລາຍການຫຼືທຸລະກຳ ຕ້ອງເຫັນວ່າ User ໃດ
+   * ເປັນຄົນລົງ. ດຶງຊື່ເປັນ query ດຽວຕໍ່ໜ້າ ແທນການ join ຕໍ່ແຖວ.
+   */
+  async withCreatorNames<T extends { createdById?: string | null }>(
+    rows: T[],
+  ): Promise<Array<T & { createdBy: string }>> {
+    const ids = [...new Set(rows.map((r) => r.createdById).filter((v): v is string => Boolean(v)))];
+    if (ids.length === 0) return rows.map((r) => ({ ...r, createdBy: '—' }));
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, fullName: true },
+    });
+    const nameById = new Map(users.map((u) => [u.id, u.fullName]));
+    return rows.map((r) => ({
+      ...r,
+      createdBy: (r.createdById ? nameById.get(r.createdById) : undefined) ?? '—',
+    }));
+  }
+
+  /**
+   * ຜູ້ບັນທຶກ ສຳລັບຕາຕະລາງ Catalog ທີ່ບໍ່ມີຖັນ `createdById` (ປະເພດຄຳ, ຕູ້,
+   * ແຫຼ່ງທີ່ມາ, ບັນຊີທະນາຄານ, ໝວດ, ຜູ້ໃຊ້).
+   *
+   * ອ່ານຈາກ Audit Log ແທນການເພີ່ມຖັນໃໝ່ທຸກຕາຕະລາງ — ການສ້າງຜ່ານໜ້າຈໍທຸກ
+   * ລາຍການຖືກບັນທຶກໄວ້ແລ້ວ (TOR §10). ແຖວທີ່ບໍ່ມີ Log ຄືຂໍ້ມູນຕັ້ງຕົ້ນທີ່ມາ
+   * ພ້ອມການຕິດຕັ້ງ ຈຶ່ງບອກຕາມນັ້ນ ແທນການປະໄວ້ຫວ່າງ.
+   */
+  async withCreatorsFromAudit<T extends { id: string }>(
+    entity: string,
+    rows: T[],
+  ): Promise<Array<T & { createdBy: string }>> {
+    if (rows.length === 0) return [];
+    const logs = await this.prisma.auditLog.findMany({
+      where: { entity, action: 'CREATE', entityId: { in: rows.map((r) => r.id) } },
+      select: { entityId: true, actor: { select: { fullName: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const nameById = new Map<string, string>();
+    for (const log of logs) {
+      // ເອົາອັນແລກ (ການສ້າງຈິງ) ຖ້າມີຫຼາຍແຖວຕໍ່ 1 id.
+      if (log.entityId && log.actor && !nameById.has(log.entityId)) {
+        nameById.set(log.entityId, log.actor.fullName);
+      }
+    }
+    return rows.map((r) => ({
+      ...r,
+      createdBy: nameById.get(r.id) ?? AuditService.SEEDED_BY,
     }));
   }
 

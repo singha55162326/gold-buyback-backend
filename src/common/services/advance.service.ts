@@ -3,6 +3,7 @@ import { Prisma, type Currency, type PaymentMethod } from '@prisma/client';
 import { dec, netAdvance, type Decimal } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BusinessDayService } from './business-day.service';
+import { AuditService } from './audit.service';
 import { HistoryRangeService } from './history-range.service';
 import type { HistoryRangeDto } from '../dto/history-range.dto';
 import type { AuthenticatedUser } from '../decorators/current-user.decorator';
@@ -45,6 +46,7 @@ export class AdvanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly range: HistoryRangeService,
+    private readonly audit: AuditService,
   ) {}
 
   async post(tx: Prisma.TransactionClient, input: AdvancePostingInput) {
@@ -152,8 +154,11 @@ export class AdvanceService {
       this.prisma.advanceLedger.count({ where }),
     ]);
 
+    // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+    const withActors = await this.audit.withCreatorNames(rows);
+
     return this.range.page(
-      rows.map((row) => {
+      withActors.map((row) => {
         /*
          * ຍອດເງິນສຸດທິ = ຍອດເງິນທີ່ໄດ້ຮັບ − ຍອດຄົງເຫຼືອຮັບ − ຍອດເງິນຕັດຊຳລະ
          * ຕາມທີ່ລູກຄ້າກຳນົດ. ຄຳນວນຢູ່ server ເພື່ອບໍ່ໃຫ້ສອງໜ້າຈໍຄຳນວນຄົນລະແບບ.

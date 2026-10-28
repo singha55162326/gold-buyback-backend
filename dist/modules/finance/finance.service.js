@@ -69,11 +69,14 @@ let FinanceService = class FinanceService {
     /* ---------------------------------------------------------------- *
      * §3.7 — ເພີ້ມລາຍການຮັບຈ່າຍ / ຈັດການລາຍຮັບລາຍຈ່າຍ
      * ---------------------------------------------------------------- */
-    listIncomeExpenseCategories(kind) {
-        return this.prisma.incomeExpenseCategory.findMany({
+    async listIncomeExpenseCategories(kind, withActor = false) {
+        const rows = await this.prisma.incomeExpenseCategory.findMany({
             where: { deletedAt: null, isActive: true, ...(kind ? { kind } : {}) },
             orderBy: [{ kind: 'asc' }, { sortOrder: 'asc' }],
         });
+        return withActor
+            ? this.audit.withCreatorsFromAudit('IncomeExpenseCategory', rows)
+            : rows;
     }
     async createIncomeExpenseCategory(dto, user) {
         const max = await this.prisma.incomeExpenseCategory.aggregate({ _max: { sortOrder: true } });
@@ -204,13 +207,8 @@ let FinanceService = class FinanceService {
             }),
             this.prisma.incomeExpenseTransaction.count({ where }),
         ]);
-        // ຜູ້ລົງລາຍການ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການບັນທຶກ.
-        const users = await this.prisma.user.findMany({
-            where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
-            select: { id: true, fullName: true },
-        });
-        const nameById = new Map(users.map((u) => [u.id, u.fullName]));
-        return this.range.page(rows.map((r) => ({ ...r, createdBy: nameById.get(r.createdById) ?? '—' })), total, range);
+        // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+        return this.range.page(await this.audit.withCreatorNames(rows), total, range);
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — Module ຝາກສິນຄ້າ
@@ -311,11 +309,13 @@ let FinanceService = class FinanceService {
             }),
             this.prisma.consignment.count({ where }),
         ]);
+        // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+        const withActors = await this.audit.withCreatorNames(rows);
         // Totals describe the page's range, not the page: the shop wants to know
         // what it is holding over the period, not what fits on screen.
         const held = rows.filter((r) => r.status === 'HELD');
         return {
-            ...this.range.page(rows, total, range),
+            ...this.range.page(withActors, total, range),
             totals: {
                 totalWeightG: held
                     .reduce((sum, r) => sum.plus(toDec(r.totalWeightG)), (0, domain_1.dec)(0))
@@ -328,8 +328,8 @@ let FinanceService = class FinanceService {
     /* ---------------------------------------------------------------- *
      * §9.1 — ລາຍການ AP-AR (Cash)
      * ---------------------------------------------------------------- */
-    listApArCategories(side) {
-        return this.prisma.apArCashCategory.findMany({
+    async listApArCategories(side, withActor = false) {
+        const rows = await this.prisma.apArCashCategory.findMany({
             where: {
                 deletedAt: null,
                 isActive: true,
@@ -337,6 +337,7 @@ let FinanceService = class FinanceService {
             },
             orderBy: { sortOrder: 'asc' },
         });
+        return withActor ? this.audit.withCreatorsFromAudit('ApArCashCategory', rows) : rows;
     }
     async createApArCategory(dto, user) {
         const max = await this.prisma.apArCashCategory.aggregate({ _max: { sortOrder: true } });
@@ -550,7 +551,8 @@ let FinanceService = class FinanceService {
             }),
             this.prisma.cashApArLedger.count({ where }),
         ]);
-        return this.range.page(rows, total, range);
+        // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+        return this.range.page(await this.audit.withCreatorNames(rows), total, range);
     }
     /** Sequential code: <PREFIX>-YYMMDD-NNN. */
     async nextCode(tx, model, prefix) {

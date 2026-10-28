@@ -472,18 +472,30 @@ export class StockService {
       this.prisma.factoryOutTracking.count({ where }),
     ]);
 
-    const editorIds = [...new Set(rows.map((r) => r.updatedById).filter((id): id is string => Boolean(id)))];
-    const editors = editorIds.length
+    /*
+     * ຜູ້ບັນທຶກ = ຜູ້ທີ່ສ້າງລາຍການສົ່ງຄຳອອກ FACTORY (ຢູ່ຕາຕະລາງ StockMovement),
+     * ສ່ວນ ຜູ້ແກ້ໄຂ = ຜູ້ປ້ອນນ້ຳໜັກທີ່ FACTORY ປະເມີນ. ສອງຄົນນີ້ມັກຕ່າງກັນ
+     * ຈຶ່ງສະແດງທັງສອງ.
+     */
+    const actorIds = [
+      ...new Set(
+        rows
+          .flatMap((r) => [r.updatedById, r.movement.createdById])
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const actors = actorIds.length
       ? await this.prisma.user.findMany({
-          where: { id: { in: editorIds } },
+          where: { id: { in: actorIds } },
           select: { id: true, fullName: true },
         })
       : [];
-    const nameById = new Map(editors.map((u) => [u.id, u.fullName]));
+    const nameById = new Map(actors.map((u) => [u.id, u.fullName]));
 
     return this.range.page(
       rows.map((row) => ({
         ...row,
+        createdBy: nameById.get(row.movement.createdById) ?? '—',
         updatedBy: row.updatedById ? (nameById.get(row.updatedById) ?? '—') : '—',
         goldTypesLo: [
           ...new Set(
@@ -903,13 +915,15 @@ export class StockService {
    * Reads
    * ---------------------------------------------------------------- */
 
-  listMovements(scope?: StockScope, status?: ApprovalStatus) {
-    return this.prisma.stockMovement.findMany({
+  /** ລາຍການເຂົ້າ-ອອກສາງ ພ້ອມຊື່ຜູ້ບັນທຶກ ແລະ ຜູ້ອະນຸມັດ. */
+  async listMovements(scope?: StockScope, status?: ApprovalStatus) {
+    const rows = await this.prisma.stockMovement.findMany({
       where: { deletedAt: null, ...(scope ? { scope } : {}), ...(status ? { status } : {}) },
       include: { lines: true, partner: true, cabinet: true },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
+    return this.audit.withActorNames(rows);
   }
 
   async newHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
@@ -925,7 +939,8 @@ export class StockService {
       }),
       this.prisma.stockNewLedger.count({ where }),
     ]);
-    return this.range.page(rows, total, range);
+    // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+    return this.range.page(await this.audit.withCreatorNames(rows), total, range);
   }
 
   async oldHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
@@ -941,7 +956,7 @@ export class StockService {
       }),
       this.prisma.stockOldLedger.count({ where }),
     ]);
-    return this.range.page(rows, total, range);
+    return this.range.page(await this.audit.withCreatorNames(rows), total, range);
   }
 
   async oldBalances() {
@@ -1125,7 +1140,7 @@ export class StockService {
       }),
       this.prisma.goldHandover.count({ where }),
     ]);
-    return this.range.page(rows, total, range);
+    return this.range.page(await this.audit.withActorNames(rows), total, range);
   }
 
   /**

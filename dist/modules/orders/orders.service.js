@@ -442,7 +442,8 @@ let OrdersService = class OrdersService {
             }),
             this.prisma.order.count({ where }),
         ]);
-        return this.range.page(rows, total, range);
+        // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
+        return this.range.page(await this.audit.withCreatorNames(rows), total, range);
     }
     /**
      * ຈ່າຍເງິນຄືນທີ່ຮັບຈາກລູກຄ້າ (TOR §7 ຕາມທີ່ລູກຄ້າແຈ້ງ).

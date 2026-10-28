@@ -81,11 +81,13 @@ let SkusService = SkusService_1 = class SkusService {
         };
     }
     async list(includeInactive = false) {
-        return this.prisma.goldSku.findMany({
+        const rows = await this.prisma.goldSku.findMany({
             where: { deletedAt: null, ...(includeInactive ? {} : { isActive: true }) },
             include: { goldItem: true },
             orderBy: [{ goldItem: { sortOrder: 'asc' } }, { weightG: 'desc' }],
         });
+        // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການສ້າງລາຍການ.
+        return this.audit.withCreatorNames(rows);
     }
     /** ລະຫັດ SKU ອັດຕະໂນມັດ — ຕົວນັບອະຕອມມິກ ບໍ່ແມ່ນ count()+1. */
     nextSkuCode() {
