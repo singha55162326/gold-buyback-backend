@@ -11,6 +11,7 @@ export const CODE_SCOPES = {
   PARTNER: { prefix: 'SUP', width: 3 },
   INCOME_EXPENSE_CATEGORY: { prefix: 'IE', width: 3 },
   APAR_CASH_CATEGORY: { prefix: 'APAR', width: 3 },
+  GOLD_SKU: { prefix: 'SKU', width: 3 },
 } as const;
 
 export type CodeScope = keyof typeof CODE_SCOPES;

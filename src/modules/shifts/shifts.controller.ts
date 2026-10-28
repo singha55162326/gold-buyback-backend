@@ -17,13 +17,15 @@ export class ShiftsController {
     return this.shifts.currentFor(user.id);
   }
 
-  @Roles('PAYMENT', 'VALUER')
+  // Admin/Manager ກໍເປີດກະໄດ້: ເຂົາເຈົ້າຕ້ອງເຮັດທຸລະກຳແທນພະນັກງານໄດ້ ແລະ
+  // ທຸກທຸລະກຳຕ້ອງຜູກກັບກະສະເໝີ ເພື່ອໃຫ້ຕິດຕາມໄດ້ວ່າເງິນຢູ່ມືໃຜ.
+  @Roles('PAYMENT', 'VALUER', 'ADMIN', 'MANAGER')
   @Post('open')
   open(@CurrentUser() user: AuthenticatedUser) {
     return this.shifts.open(user);
   }
 
-  @Roles('PAYMENT', 'VALUER')
+  @Roles('PAYMENT', 'VALUER', 'ADMIN', 'MANAGER')
   @Post('close')
   close(@CurrentUser() user: AuthenticatedUser, @Body() dto: CloseShiftDto) {
     return this.shifts.close(user, dto);

@@ -129,6 +129,21 @@ export class OrdersService {
     const totalAmount = dec(dto.totalAmount);
     if (totalAmount.lte(0)) throw new BadRequestException('ຍອດລວມຕ້ອງໃຫຍ່ກວ່າ 0');
 
+    /*
+     * ບິນໜຶ່ງມີໄດ້ຫຼາຍລາຍການ. ຫົວບິນຍັງເກັບ ນ້ຳໜັກລວມ / ຈຳນວນລວມ ແລະ
+     * ລາຍການທຳອິດ ເພື່ອໃຫ້ການຮັບເງິນ, Advance ແລະ ລາຍງານເກົ່າອ່ານບ່ອນດຽວ.
+     */
+    const lines = dto.lines?.length
+      ? dto.lines
+      : dto.goldItemId && dto.weightG && dto.quantity
+        ? [{ goldItemId: dto.goldItemId, weightG: dto.weightG, quantity: dto.quantity }]
+        : [];
+    if (lines.length === 0) throw new BadRequestException('ຕ້ອງມີລາຍການຢ່າງໜ້ອຍ 1 ລາຍການ');
+
+    const totalWeightG = lines.reduce((sum, l) => sum.plus(dec(l.weightG).mul(l.quantity)), dec(0));
+    const totalQuantity = lines.reduce((sum, l) => sum + l.quantity, 0);
+    if (totalWeightG.lte(0)) throw new BadRequestException('ນ້ຳໜັກລວມຕ້ອງໃຫຍ່ກວ່າ 0');
+
     const receipt = this.resolveReceipts(this.receiptLines(dto), context.rates, totalAmount);
     const day = await this.businessDay.current();
 
@@ -146,9 +161,19 @@ export class OrdersService {
           productType: dto.productType,
           staffName: dto.staffName.trim(),
           customerId: customer.id,
-          goldItemId: dto.goldItemId,
-          weightG: D(dec(dto.weightG)),
-          quantity: dto.quantity,
+          goldItemId: lines[0]!.goldItemId,
+          weightG: D(totalWeightG),
+          quantity: totalQuantity,
+          lines: {
+            create: lines.map((line, index) => ({
+              goldItemId: line.goldItemId,
+              weightG: D(dec(line.weightG)),
+              quantity: line.quantity,
+              amount: line.amount ? D(dec(line.amount)) : null,
+              note: line.note ?? null,
+              sortOrder: index,
+            })),
+          },
           totalAmount: D(totalAmount),
           receivedAmount: D(receipt.applied),
           balanceAmount: D(totalAmount.minus(receipt.applied)),
@@ -172,7 +197,11 @@ export class OrdersService {
             create: { toStatus: 'ORDER_PLACED', changedById: user.id },
           },
         },
-        include: { receipts: true, customer: true },
+        include: {
+          receipts: true,
+          customer: true,
+          lines: { include: { goldItem: true }, orderBy: { sortOrder: 'asc' } },
+        },
       });
 
       // One movement per leg, so Module Cash and Module Bank each show
@@ -201,6 +230,23 @@ export class OrdersService {
           method: line.method,
           bankAccountId: line.bankAccountId ?? null,
           note: `ເງິນມັດຈໍາ Order ${order.code}`,
+          createdById: user.id,
+        });
+      }
+
+      /*
+       * Order ທີ່ສ້າງໂດຍຍັງບໍ່ໄດ້ຮັບເງິນມັດຈຳ ກໍຕ້ອງປາກົດຢູ່ Module Advance.
+       * ແຕ່ກ່ອນ ການບັນທຶກຂ້າມແຖວທີ່ຈຳນວນເງິນ = 0 ຈຶ່ງເຫັນແຕ່ Order ທີ່ມີເງິນ
+       * — ລູກຄ້າແຈ້ງວ່າ "ລາຍການບໍ່ບັນທຶກເຂົ້າ Module Advace".
+       */
+      if (receipt.lines.length === 0) {
+        await this.advance.post(tx, {
+          orderId: order.id,
+          currency: 'LAK',
+          amount: dec(0),
+          direction: 'IN',
+          allowZero: true,
+          note: `ສ້າງ Order ${order.code} — ຍັງບໍ່ໄດ້ຮັບເງິນມັດຈຳ`,
           createdById: user.id,
         });
       }
@@ -261,6 +307,10 @@ export class OrdersService {
         data: {
           status: dto.status,
           ...(dto.supplierId ? { supplierId: dto.supplierId } : {}),
+          // ວັນທີສັ່ງຊ່າງ — ເກັບຕອນປ່ຽນສະຖານະ ເພື່ອໃຫ້ View ບອກໄດ້ວ່າສັ່ງມື້ໃດ.
+          ...(dto.status === 'SENT_TO_SMITH' && !order.sentToSmithAt
+            ? { sentToSmithAt: new Date() }
+            : {}),
           ...(dto.receivedFromSmithAt
             ? { receivedFromSmithAt: new Date(dto.receivedFromSmithAt) }
             : {}),
@@ -430,6 +480,8 @@ export class OrdersService {
           goldItem: true,
           supplier: true,
           receipts: { include: { bankAccount: true } },
+          // ລາຍການໃນບິນ — ປຸ່ມ View ຕ້ອງເຫັນຄົບທຸກແຖວ.
+          lines: { include: { goldItem: true }, orderBy: { sortOrder: 'asc' } },
           statusHistory: true,
         },
         orderBy: { createdAt: 'desc' },
@@ -439,6 +491,87 @@ export class OrdersService {
       this.prisma.order.count({ where }),
     ]);
     return this.range.page(rows, total, range);
+  }
+
+  /**
+   * ຈ່າຍເງິນຄືນທີ່ຮັບຈາກລູກຄ້າ (TOR §7 ຕາມທີ່ລູກຄ້າແຈ້ງ).
+   *
+   * ໃຊ້ຕອນຢືນຢັນລູກຄ້າຮັບເຄື່ອງ ແລ້ວຕ້ອງຄືນເງິນມັດຈຳ (ຫຼື ສ່ວນໜຶ່ງ) ໃຫ້ລູກຄ້າ:
+   * ເງິນອອກຈາກລີ້ນຊັກ/ບັນຊີຈິງ, ແຖວ OrderReceipt ບັນທຶກເປັນ `isRefund`, ແລະ
+   * ຍອດ Advance ທີ່ຍັງຖືແທນລູກຄ້າຫຼຸດລົງຕາມຈຳນວນທີ່ຄືນ.
+   */
+  async refund(id: string, dto: ReceiveOrderDto, user: AuthenticatedUser) {
+    const order = await this.prisma.order.findFirst({ where: { id, deletedAt: null } });
+    if (!order) throw new NotFoundException('ບໍ່ພົບ Order');
+
+    const lines = (dto.receipts ?? []).filter((l) => dec(l.amount).gt(0));
+    if (lines.length === 0) throw new BadRequestException('ຕ້ອງລະບຸຈຳນວນເງິນທີ່ຈ່າຍຄືນ');
+
+    const bankLegs = lines.filter((l) => l.method === 'BANK');
+    if (bankLegs.some((l) => !l.bankAccountId)) {
+      throw new BadRequestException('ການຈ່າຍແບບໂອນ ຕ້ອງເລືອກທະນາຄານ');
+    }
+
+    const day = await this.businessDay.current();
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const line of lines) {
+        const amount = new Prisma.Decimal(dec(line.amount).toFixed());
+
+        await this.recordReceiptMoney(tx, {
+          method: line.method,
+          bankAccountId: line.bankAccountId ?? null,
+          currency: line.currency,
+          amount,
+          businessDayId: day.id,
+          refId: order.id,
+          note: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
+          createdById: user.id,
+          direction: 'out',
+        });
+
+        await tx.orderReceipt.create({
+          data: {
+            orderId: order.id,
+            method: line.method,
+            bankAccountId: line.bankAccountId ?? null,
+            currency: line.currency,
+            rate: new Prisma.Decimal(1),
+            amount,
+            amountLak: amount,
+            isRefund: true,
+            createdById: user.id,
+          },
+        });
+
+        await this.advance.post(tx, {
+          orderId: order.id,
+          currency: line.currency,
+          amount: dec(line.amount),
+          direction: 'OUT',
+          method: line.method,
+          bankAccountId: line.bankAccountId ?? null,
+          note: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
+          createdById: user.id,
+        });
+      }
+
+      await this.audit.record(
+        {
+          actorId: user.id,
+          action: 'UPDATE',
+          entity: 'Order',
+          entityId: order.id,
+          summary: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
+        },
+        tx,
+      );
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: order.id },
+        include: { receipts: true },
+      });
+    });
   }
 
   private async recordReceiptMoney(
@@ -452,13 +585,16 @@ export class OrdersService {
       refId: string;
       note: string;
       createdById: string;
+      /** `out` = ຮ້ານຈ່າຍເງິນຄືນໃຫ້ລູກຄ້າ. */
+      direction?: 'in' | 'out';
     },
   ) {
+    const out = input.direction === 'out';
     if (input.method === 'CASH') {
       await tx.cashTransaction.create({
         data: {
           businessDayId: input.businessDayId,
-          type: 'IN',
+          type: out ? 'OUT' : 'IN',
           currency: input.currency,
           amount: input.amount,
           refType: 'Order',
@@ -472,7 +608,7 @@ export class OrdersService {
         data: {
           businessDayId: input.businessDayId,
           bankAccountId: input.bankAccountId,
-          type: 'DEPOSIT',
+          type: out ? 'WITHDRAW' : 'DEPOSIT',
           currency: input.currency,
           amount: input.amount,
           refType: 'Order',

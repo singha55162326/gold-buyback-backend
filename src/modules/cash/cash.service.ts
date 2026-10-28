@@ -286,38 +286,119 @@ export class CashService {
 
   /** ຍອດເງິນສົດຄົງເຫຼືອ per currency, for today (TOR §3.7). */
   /**
-   * ຍອດເງິນສົດຂອງມື້ການຄ້າ. `dayId` ວ່າງ = ມື້ນີ້.
+   * ຍອດເງິນສົດ ຢູ່ມື້ການຄ້າໜຶ່ງ. `asOf` ວ່າງ = ມື້ນີ້.
    *
-   * ຮັບເປັນ id ບໍ່ແມ່ນວັນທີ ເພື່ອໃຫ້ຜູ້ເອີ້ນແກ້ໄດ້ວ່າ "ມື້ນັ້ນບໍ່ມີຢູ່" ແນວໃດ
-   * — ຍອດເງິນສູນ ກັບ ມື້ທີ່ບໍ່ເຄີຍເປີດ ບໍ່ແມ່ນເລື່ອງດຽວກັນ.
+   * ຍອດຍົກມາ ສຳຄັນ: ແຕ່ກ່ອນນັບແຕ່ທຸລະກຳຂອງມື້ນັ້ນ ສະນັ້ນພໍຂຶ້ນມື້ໃໝ່ທີ່ຍັງ
+   * ບໍ່ມີການເຄື່ອນໄຫວ ຍອດຈຶ່ງເປັນ 0 ຄືກັບວ່າເງິນຫາຍ. ເງິນສົດບໍ່ໄດ້ຫາຍຕອນ
+   * ທ່ຽງຄືນ — ມັນນອນຢູ່ລີ້ນຊັກຕໍ່ໄປ — ສະນັ້ນຍອດຈຶ່ງເປັນຍອດສະສົມ:
+   *
+   *   ຄົງເຫຼືອ = ຍົກມາ (ທຸກມື້ກ່ອນໜ້າ) + ເຂົ້າມື້ນີ້ − ອອກມື້ນີ້
+   *
+   * ຮັບເປັນວັນທີ ບໍ່ແມ່ນ id ຂອງມື້ການຄ້າ ເພື່ອໃຫ້ຖາມຍ້ອນຫຼັງໄດ້ ເຖິງວັນທີ່
+   * ຮ້ານບໍ່ໄດ້ເປີດກະ (ມື້ນັ້ນບໍ່ມີການເຄື່ອນໄຫວ ແຕ່ຍັງມີຍອດຍົກມາ).
    */
-  async cashBalances(dayId?: string) {
-    const businessDayId = dayId ?? (await this.businessDay.current()).id;
+  async cashBalances(asOf?: Date) {
+    const date = asOf ?? (await this.businessDay.current()).date;
 
-    const rows = await this.prisma.cashTransaction.groupBy({
-      by: ['currency', 'type'],
-      where: { businessDayId, deletedAt: null },
-      _sum: { amount: true },
-    });
+    const [today, prior] = await Promise.all([
+      this.prisma.cashTransaction.groupBy({
+        by: ['currency', 'type'],
+        where: { deletedAt: null, businessDay: { date } },
+        _sum: { amount: true },
+      }),
+      this.prisma.cashTransaction.groupBy({
+        by: ['currency', 'type'],
+        where: { deletedAt: null, businessDay: { date: { lt: date } } },
+        _sum: { amount: true },
+      }),
+    ]);
 
-    return CURRENCIES.map((currency) => {
+    const net = (rows: typeof today, currency: string) => {
       let inflow = dec(0);
       let outflow = dec(0);
-
       for (const row of rows) {
         if (row.currency !== currency) continue;
         const amount = dec(row._sum.amount?.toFixed() ?? 0);
         if (CASH_SIGN[row.type] === 1) inflow = inflow.plus(amount);
         else outflow = outflow.plus(amount);
       }
+      return { inflow, outflow };
+    };
+
+    return CURRENCIES.map((currency) => {
+      const day = net(today, currency);
+      const before = net(prior, currency);
+      const opening = before.inflow.minus(before.outflow);
 
       return {
         currency,
-        inflow: inflow.toFixed(),
-        outflow: outflow.toFixed(),
-        balance: inflow.minus(outflow).toFixed(),
+        /** ຍອດຍົກມາ ຈາກມື້ກ່ອນໜ້າ. */
+        opening: opening.toFixed(),
+        inflow: day.inflow.toFixed(),
+        outflow: day.outflow.toFixed(),
+        balance: opening.plus(day.inflow).minus(day.outflow).toFixed(),
       };
     });
+  }
+
+  /**
+   * ຍອດເງິນໃນກະເປົ໋າເງິນສົດຂອງຜູ້ໃຊ້ (ກະທີ່ເປີດຢູ່).
+   *
+   * ລູກຄ້າກຳນົດທາງເຂົ້າ-ອອກໄວ້ແຄບກວ່າຍອດເງິນສົດຂອງຮ້ານ:
+   *   ເຂົ້າ  = ເບີກເງິນຈາກ Module Cash (CashRequest) + ລາຍການສິນເຊື່ອ
+   *   ອອກ   = ຈ່າຍ Buyback + ຈ່າຍ ປ່ຽນເປັນເງິນ + ມອບເງິນຄືນ/ປິດກະ
+   * ສະນັ້ນຈຶ່ງນັບສະເພາະ refType ເຫຼົ່ານີ້ ແລະ ສະເພາະກະນັ້ນ — ບໍ່ແມ່ນທັງມື້.
+   */
+  async walletBalance(userId: string) {
+    const shift = await this.prisma.shift.findFirst({
+      where: { userId, closedAt: null, status: 'OPEN' },
+      orderBy: { openedAt: 'desc' },
+    });
+    if (!shift) {
+      return {
+        shiftId: null as string | null,
+        openedAt: null as Date | null,
+        balances: CURRENCIES.map((currency) => ({
+          currency,
+          inflow: '0',
+          outflow: '0',
+          balance: '0',
+        })),
+      };
+    }
+
+    const IN_REFS = ['CashRequest', 'GoldCredit'];
+    const OUT_REFS = ['Buyback', 'GoldExchange', 'CashRequest', 'ShiftClose'];
+
+    const rows = await this.prisma.cashTransaction.findMany({
+      where: {
+        shiftId: shift.id,
+        deletedAt: null,
+        refType: { in: [...new Set([...IN_REFS, ...OUT_REFS])] },
+      },
+      select: { currency: true, type: true, amount: true, refType: true },
+    });
+
+    return {
+      shiftId: shift.id,
+      openedAt: shift.openedAt,
+      balances: CURRENCIES.map((currency) => {
+        let inflow = dec(0);
+        let outflow = dec(0);
+        for (const row of rows) {
+          if (row.currency !== currency) continue;
+          const amount = dec(row.amount.toFixed());
+          if (CASH_SIGN[row.type] === 1) inflow = inflow.plus(amount);
+          else outflow = outflow.plus(amount);
+        }
+        return {
+          currency,
+          inflow: inflow.toFixed(),
+          outflow: outflow.toFixed(),
+          balance: inflow.minus(outflow).toFixed(),
+        };
+      }),
+    };
   }
 
   async cashHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
@@ -335,7 +416,7 @@ export class CashService {
       }),
       this.prisma.cashTransaction.count({ where }),
     ]);
-    return this.range.page(rows, total, range);
+    return this.range.page(await this.withActorNames(rows), total, range);
   }
 
   /* ---------------------------------------------------------------- *
@@ -384,37 +465,55 @@ export class CashService {
    * A non-zero variance is the shop's signal that the ledger and the bank
    * statement have diverged, so it is surfaced rather than reconciled away.
    */
-  /** ຍອດທະນາຄານຂອງມື້ການຄ້າ. `dayId` ວ່າງ = ມື້ນີ້. */
-  async bankBalances(dayId?: string) {
-    const businessDayId = dayId ?? (await this.businessDay.current()).id;
+  /**
+   * ຍອດທະນາຄານ ຢູ່ມື້ການຄ້າໜຶ່ງ. `asOf` ວ່າງ = ມື້ນີ້.
+   * ຍົກຍອດຂ້າມມື້ ແບບດຽວກັນກັບເງິນສົດ — ເງິນໃນບັນຊີບໍ່ໄດ້ຫາຍຕອນຂຶ້ນມື້ໃໝ່.
+   */
+  async bankBalances(asOf?: Date, refTypes?: string[]) {
+    const date = asOf ?? (await this.businessDay.current()).date;
+    // ກອງຕາມທີ່ມາ ເມື່ອຜູ້ເອີ້ນລະບຸ — ໜ້າ Bank (To Day) ຂອງ payment ສະແດງ
+    // ສະເພາະເງິນໜ້າຮ້ານ (Buyback / ປ່ຽນເປັນເງິນ / ສິນເຊື່ອ) ຕາມທີ່ລູກຄ້າກຳນົດ.
+    const source = refTypes?.length ? { refType: { in: refTypes } } : {};
 
-    const [accounts, rows, netBalances] = await Promise.all([
+    const [accounts, rows, priorRows, netBalances] = await Promise.all([
       this.prisma.bankAccount.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
       this.prisma.bankTransaction.groupBy({
         by: ['bankAccountId', 'currency', 'type'],
-        where: { businessDayId, deletedAt: null },
+        where: { deletedAt: null, businessDay: { date }, ...source },
         _sum: { amount: true },
       }),
-      this.prisma.bankNetBalance.findMany({ where: { businessDayId } }),
+      this.prisma.bankTransaction.groupBy({
+        by: ['bankAccountId', 'currency', 'type'],
+        where: { deletedAt: null, businessDay: { date: { lt: date } }, ...source },
+        _sum: { amount: true },
+      }),
+      this.prisma.bankNetBalance.findMany({ where: { businessDay: { date } } }),
     ]);
 
     const netByKey = new Map(
       netBalances.map((n) => [`${n.bankAccountId}:${n.currency}`, dec(n.netAmount.toFixed())]),
     );
 
+    const movement = (source: typeof rows, accountId: string, currency: string) => {
+      let inflow = dec(0);
+      let outflow = dec(0);
+      for (const row of source) {
+        if (row.bankAccountId !== accountId || row.currency !== currency) continue;
+        const amount = dec(row._sum.amount?.toFixed() ?? 0);
+        if (BANK_SIGN[row.type] === 1) inflow = inflow.plus(amount);
+        else outflow = outflow.plus(amount);
+      }
+      return { inflow, outflow };
+    };
+
     return accounts.flatMap((account) =>
       CURRENCIES.map((currency) => {
-        let inflow = dec(0);
-        let outflow = dec(0);
+        const day = movement(rows, account.id, currency);
+        const before = movement(priorRows, account.id, currency);
+        const opening = before.inflow.minus(before.outflow);
 
-        for (const row of rows) {
-          if (row.bankAccountId !== account.id || row.currency !== currency) continue;
-          const amount = dec(row._sum.amount?.toFixed() ?? 0);
-          if (BANK_SIGN[row.type] === 1) inflow = inflow.plus(amount);
-          else outflow = outflow.plus(amount);
-        }
-
-        const actual = inflow.minus(outflow);
+        // ຍອດຕົວຈິງ = ຍົກມາ + ເຂົ້າມື້ນີ້ − ອອກມື້ນີ້.
+        const actual = opening.plus(day.inflow).minus(day.outflow);
         const net = netByKey.get(`${account.id}:${currency}`);
 
         return {
@@ -422,8 +521,10 @@ export class CashService {
           bankCode: account.code,
           bankNameLo: account.nameLo,
           currency,
-          inflow: inflow.toFixed(),
-          outflow: outflow.toFixed(),
+          /** ຍອດຍົກມາ ຈາກມື້ກ່ອນໜ້າ. */
+          opening: opening.toFixed(),
+          inflow: day.inflow.toFixed(),
+          outflow: day.outflow.toFixed(),
           actual: actual.toFixed(),
           net: net ? net.toFixed() : null,
           variance: net ? actual.minus(net).toFixed() : null,
@@ -467,11 +568,12 @@ export class CashService {
     return saved;
   }
 
-  async bankHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+  async bankHistory(query: HistoryRangeDto, user?: AuthenticatedUser, refTypes?: string[]) {
     const range = this.range.resolve(query, user);
     const where = {
       deletedAt: null,
       createdAt: HistoryRangeService.window(range),
+      ...(refTypes?.length ? { refType: { in: refTypes } } : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.bankTransaction.findMany({
@@ -483,6 +585,23 @@ export class CashService {
       }),
       this.prisma.bankTransaction.count({ where }),
     ]);
-    return this.range.page(rows, total, range);
+    return this.range.page(await this.withActorNames(rows), total, range);
+  }
+
+  /**
+   * ແປະຊື່ຜູ້ລົງລາຍການໃສ່ແຕ່ລະແຖວ.
+   *
+   * ລູກຄ້າຂໍວ່າ ທຸກ Module ທີ່ມີການບັນທຶກ ຕ້ອງເຫັນວ່າ User ໃດເປັນຄົນເຮັດ.
+   * ຕາຕະລາງທຸລະກຳເກັບແຕ່ `createdById` ຈຶ່ງດຶງຊື່ເປັນ query ດຽວຕໍ່ໜ້າ
+   * ແທນການ join ຕໍ່ແຖວ.
+   */
+  private async withActorNames<T extends { createdById: string }>(rows: T[]) {
+    if (rows.length === 0) return [] as Array<T & { createdBy: string }>;
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
+      select: { id: true, fullName: true },
+    });
+    const nameById = new Map(users.map((u) => [u.id, u.fullName]));
+    return rows.map((r) => ({ ...r, createdBy: nameById.get(r.createdById) ?? '—' }));
   }
 }

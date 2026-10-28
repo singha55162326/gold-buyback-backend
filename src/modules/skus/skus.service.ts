@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { dec, GRAMS_PER_BAHT, trimTrailingZeros, type Decimal } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { CodeGeneratorService } from '../../common/services/code-generator.service';
 import type { CreateSkuDto, UpdateSkuDto } from './dto/sku.dto';
 
 /**
@@ -19,6 +20,7 @@ export class SkusService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly codes: CodeGeneratorService,
   ) {}
 
   /**
@@ -80,6 +82,11 @@ export class SkusService {
     });
   }
 
+  /** ລະຫັດ SKU ອັດຕະໂນມັດ — ຕົວນັບອະຕອມມິກ ບໍ່ແມ່ນ count()+1. */
+  private nextSkuCode() {
+    return this.codes.nextFor('GOLD_SKU', this.prisma.goldSku as never);
+  }
+
   async create(dto: CreateSkuDto, actorId: string) {
     const weight = this.parseWeight(dto.weightG);
 
@@ -88,22 +95,50 @@ export class SkusService {
     });
     if (!goldItem) throw new NotFoundException('ບໍ່ພົບລາຍການຄຳທີ່ເລືອກ');
 
-    const duplicate = await this.prisma.goldSku.findFirst({
-      where: { goldItemId: dto.goldItemId, weightG: new Prisma.Decimal(weight.toFixed()), deletedAt: null },
+    /*
+     * ໜຶ່ງລາຍການຄຳ + ໜຶ່ງນ້ຳໜັກ = ໜຶ່ງ SKU, ບັງຄັບດ້ວຍ unique index ທີ່ນັບ
+     * ລວມແຖວທີ່ລຶບໄປແລ້ວນຳ. ສະນັ້ນ ຖ້າເຄີຍລຶບ SKU ນີ້ໄປ ແລ້ວສ້າງຄືນອັນເກົ່າ
+     * ການ insert ຈະຕາຍຢູ່ຖານຂໍ້ມູນ (ແຕ່ກ່ອນອອກເປັນ error 500 ທີ່ອ່ານບໍ່ອອກ).
+     *
+     * ຟື້ນແຖວເກົ່າຄືນແທນການ insert ໃໝ່: ຍອດສາງ ແລະ ປະຫວັດທີ່ເຄີຍອ້າງ SKU
+     * ນີ້ຍັງອ້າງແຖວເກົ່າຢູ່ ຈຶ່ງບໍ່ຂາດຕອນ ແລະ ລະຫັດ SKU ກໍຄົງເດີມ.
+     */
+    const weightValue = new Prisma.Decimal(weight.toFixed());
+    const existing = await this.prisma.goldSku.findFirst({
+      where: { goldItemId: dto.goldItemId, weightG: weightValue },
     });
-    if (duplicate) throw new ConflictException('SKU ນ້ຳໜັກນີ້ມີຢູ່ແລ້ວ');
+    if (existing && existing.deletedAt === null) {
+      throw new ConflictException('SKU ນ້ຳໜັກນີ້ມີຢູ່ແລ້ວ');
+    }
 
-    const created = await this.prisma.goldSku.create({
-      data: {
-        goldItemId: dto.goldItemId,
-        nameLo: dto.nameLo.trim(),
-        weightG: new Prisma.Decimal(weight.toFixed()),
-        bahtWeight: new Prisma.Decimal(SkusService.bahtWeight(weight).toFixed()),
-        fullSkuName: SkusService.buildFullSkuName(dto.nameLo, weight),
-        createdById: actorId,
-      },
-      include: { goldItem: true },
-    });
+    const data = {
+      nameLo: dto.nameLo.trim(),
+      bahtWeight: new Prisma.Decimal(SkusService.bahtWeight(weight).toFixed()),
+      fullSkuName: SkusService.buildFullSkuName(dto.nameLo, weight),
+    };
+
+    const created = existing
+      ? await this.prisma.goldSku.update({
+          where: { id: existing.id },
+          data: {
+            ...data,
+            deletedAt: null,
+            isActive: true,
+            createdById: actorId,
+            code: existing.code ?? (await this.nextSkuCode()),
+          },
+          include: { goldItem: true },
+        })
+      : await this.prisma.goldSku.create({
+          data: {
+            ...data,
+            code: await this.nextSkuCode(),
+            goldItemId: dto.goldItemId,
+            weightG: weightValue,
+            createdById: actorId,
+          },
+          include: { goldItem: true },
+        });
 
     await this.audit.record({
       actorId,

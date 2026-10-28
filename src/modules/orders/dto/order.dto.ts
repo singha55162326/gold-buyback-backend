@@ -7,7 +7,9 @@ import {
   IsString,
   Matches,
   Min,
-  ValidateNested,  ArrayMinSize,  IsArray,
+  ValidateNested,
+  ArrayMinSize,
+  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -27,6 +29,16 @@ export class OrderReceiptLinesDto {
   receipts: OrderReceiptDto[];
 }
 
+/** ແຖວລາຍການໃນບິນ Order. */
+export class OrderLineDto {
+  @IsString() goldItemId: string;
+  @IsNumberString({}, { message: 'ນ້ຳໜັກຕ້ອງເປັນຕົວເລກ' }) weightG: string;
+  @IsInt() @Min(1) quantity: number;
+  /** ຍອດເງິນຂອງແຖວນີ້ — ວ່າງໄດ້ ຖ້າຮ້ານຄິດລວມຢູ່ຫົວບິນ. */
+  @IsOptional() @IsNumberString() amount?: string;
+  @IsOptional() @IsString() note?: string;
+}
+
 export class CreateOrderDto {
   @Matches(/^\d{8}$/, { message: 'ເບີໂທຕ້ອງເປັນຕົວເລກ 8 ໂຕ' })
   phone: string;
@@ -41,9 +53,20 @@ export class CreateOrderDto {
   /** ຊື່ພະນັກງານ ທີ່ຮັບ Order. */
   @IsString() staffName: string;
 
-  @IsString() goldItemId: string;
-  @IsNumberString() weightG: string;
-  @IsInt() @Min(1) quantity: number;
+  /**
+   * ຫຼາຍລາຍການໃນບິນດຽວ (ທີ່ລູກຄ້າຂໍ).
+   * ບໍ່ສົ່ງມາ = ຖືວ່າເປັນບິນແຖວດຽວ ຕາມຊ່ອງຂ້າງລຸ່ມ (client ເກົ່າ).
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1, { message: 'ຕ້ອງມີລາຍການຢ່າງໜ້ອຍ 1 ລາຍການ' })
+  @ValidateNested({ each: true })
+  @Type(() => OrderLineDto)
+  lines?: OrderLineDto[];
+
+  @IsOptional() @IsString() goldItemId?: string;
+  @IsOptional() @IsNumberString() weightG?: string;
+  @IsOptional() @IsInt() @Min(1) quantity?: number;
   @IsNumberString() totalAmount: string;
   @IsOptional() @IsString() note?: string;
 

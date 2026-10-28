@@ -40,6 +40,17 @@ export class OrdersController {
     return this.orders.updateStatus(id, dto, user);
   }
 
+  /** ຈ່າຍເງິນຄືນທີ່ຮັບຈາກລູກຄ້າ — ຕອນລູກຄ້າມາຮັບເຄື່ອງ. */
+  @Roles('FINANCIAL_CONTROLLER', 'PAYMENT', 'ADMIN', 'MANAGER')
+  @Post(':id/refund')
+  refund(
+    @Param('id') id: string,
+    @Body() dto: ReceiveOrderDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.orders.refund(id, dto, user);
+  }
+
   /** ຊຳລະເພີ່ມ — auto-completes the order when the balance reaches zero. */
   @Roles('FINANCIAL_CONTROLLER', 'PAYMENT', 'ADMIN', 'MANAGER')
   @Post(':id/receipts')

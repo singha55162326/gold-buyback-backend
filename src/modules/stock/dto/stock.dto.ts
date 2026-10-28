@@ -16,6 +16,8 @@ export class StockLineDto {
   @IsOptional() @IsString() goldSkuId?: string;
   /** Stock (OLD) lines reference a ປະເພດຄຳ. */
   @IsOptional() @IsString() goldTypeId?: string;
+  /** ລາຍການຄຳ — ຝັ່ງ OLD ບໍ່ມີ SKU, ແຕ່ຍັງຢາກຮູ້ວ່າເປັນສາຍແຂນ ຫຼື ແຫວນ. */
+  @IsOptional() @IsString() goldItemId?: string;
   /** ໝວດ (ຮູບປະພັນ / ແທ່ງ) — Stock OLD IN ເທົ່ານັ້ນ. */
   @IsOptional() @IsIn(['JEWELRY', 'BAR']) oldCategory?: 'JEWELRY' | 'BAR';
   @IsNumberString() weightG: string;

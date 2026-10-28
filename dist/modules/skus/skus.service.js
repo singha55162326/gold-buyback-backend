@@ -16,6 +16,7 @@ const client_1 = require("@prisma/client");
 const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const audit_service_1 = require("../../common/services/audit.service");
+const code_generator_service_1 = require("../../common/services/code-generator.service");
 /**
  * TOR §3.6 — ລະບົບຈັດການ SKU ນ້ຳໜັກຂອງຄຳ.
  *
@@ -28,9 +29,11 @@ const audit_service_1 = require("../../common/services/audit.service");
 let SkusService = SkusService_1 = class SkusService {
     prisma;
     audit;
-    constructor(prisma, audit) {
+    codes;
+    constructor(prisma, audit, codes) {
         this.prisma = prisma;
         this.audit = audit;
+        this.codes = codes;
     }
     /**
      * ບາດຄຳ = g / 15, shown to two decimals but with trailing zeros trimmed so
@@ -84,6 +87,10 @@ let SkusService = SkusService_1 = class SkusService {
             orderBy: [{ goldItem: { sortOrder: 'asc' } }, { weightG: 'desc' }],
         });
     }
+    /** ລະຫັດ SKU ອັດຕະໂນມັດ — ຕົວນັບອະຕອມມິກ ບໍ່ແມ່ນ count()+1. */
+    nextSkuCode() {
+        return this.codes.nextFor('GOLD_SKU', this.prisma.goldSku);
+    }
     async create(dto, actorId) {
         const weight = this.parseWeight(dto.weightG);
         const goldItem = await this.prisma.goldItem.findFirst({
@@ -91,22 +98,48 @@ let SkusService = SkusService_1 = class SkusService {
         });
         if (!goldItem)
             throw new common_1.NotFoundException('ບໍ່ພົບລາຍການຄຳທີ່ເລືອກ');
-        const duplicate = await this.prisma.goldSku.findFirst({
-            where: { goldItemId: dto.goldItemId, weightG: new client_1.Prisma.Decimal(weight.toFixed()), deletedAt: null },
+        /*
+         * ໜຶ່ງລາຍການຄຳ + ໜຶ່ງນ້ຳໜັກ = ໜຶ່ງ SKU, ບັງຄັບດ້ວຍ unique index ທີ່ນັບ
+         * ລວມແຖວທີ່ລຶບໄປແລ້ວນຳ. ສະນັ້ນ ຖ້າເຄີຍລຶບ SKU ນີ້ໄປ ແລ້ວສ້າງຄືນອັນເກົ່າ
+         * ການ insert ຈະຕາຍຢູ່ຖານຂໍ້ມູນ (ແຕ່ກ່ອນອອກເປັນ error 500 ທີ່ອ່ານບໍ່ອອກ).
+         *
+         * ຟື້ນແຖວເກົ່າຄືນແທນການ insert ໃໝ່: ຍອດສາງ ແລະ ປະຫວັດທີ່ເຄີຍອ້າງ SKU
+         * ນີ້ຍັງອ້າງແຖວເກົ່າຢູ່ ຈຶ່ງບໍ່ຂາດຕອນ ແລະ ລະຫັດ SKU ກໍຄົງເດີມ.
+         */
+        const weightValue = new client_1.Prisma.Decimal(weight.toFixed());
+        const existing = await this.prisma.goldSku.findFirst({
+            where: { goldItemId: dto.goldItemId, weightG: weightValue },
         });
-        if (duplicate)
+        if (existing && existing.deletedAt === null) {
             throw new common_1.ConflictException('SKU ນ້ຳໜັກນີ້ມີຢູ່ແລ້ວ');
-        const created = await this.prisma.goldSku.create({
-            data: {
-                goldItemId: dto.goldItemId,
-                nameLo: dto.nameLo.trim(),
-                weightG: new client_1.Prisma.Decimal(weight.toFixed()),
-                bahtWeight: new client_1.Prisma.Decimal(SkusService_1.bahtWeight(weight).toFixed()),
-                fullSkuName: SkusService_1.buildFullSkuName(dto.nameLo, weight),
-                createdById: actorId,
-            },
-            include: { goldItem: true },
-        });
+        }
+        const data = {
+            nameLo: dto.nameLo.trim(),
+            bahtWeight: new client_1.Prisma.Decimal(SkusService_1.bahtWeight(weight).toFixed()),
+            fullSkuName: SkusService_1.buildFullSkuName(dto.nameLo, weight),
+        };
+        const created = existing
+            ? await this.prisma.goldSku.update({
+                where: { id: existing.id },
+                data: {
+                    ...data,
+                    deletedAt: null,
+                    isActive: true,
+                    createdById: actorId,
+                    code: existing.code ?? (await this.nextSkuCode()),
+                },
+                include: { goldItem: true },
+            })
+            : await this.prisma.goldSku.create({
+                data: {
+                    ...data,
+                    code: await this.nextSkuCode(),
+                    goldItemId: dto.goldItemId,
+                    weightG: weightValue,
+                    createdById: actorId,
+                },
+                include: { goldItem: true },
+            });
         await this.audit.record({
             actorId,
             action: 'CREATE',
@@ -169,6 +202,7 @@ exports.SkusService = SkusService;
 exports.SkusService = SkusService = SkusService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        audit_service_1.AuditService])
+        audit_service_1.AuditService,
+        code_generator_service_1.CodeGeneratorService])
 ], SkusService);
 //# sourceMappingURL=skus.service.js.map

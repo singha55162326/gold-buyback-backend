@@ -33,12 +33,24 @@ export class ShiftGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const user = request.user as AuthenticatedUser | undefined;
-    if (!user || !SHIFT_BOUND_ROLES.has(user.role)) return true;
+    if (!user) return true;
 
     const day = await this.businessDay.current();
     const shift = await this.prisma.shift.findUnique({
       where: { userId_businessDayId: { userId: user.id, businessDayId: day.id } },
     });
+
+    /*
+     * Admin/Manager ບໍ່ຖືກບັງຄັບໃຫ້ເປີດກະ ແຕ່ຖ້າເປີດໄວ້ ກໍແນບໃຫ້ນຳ.
+     *
+     * ແຕ່ກ່ອນ ບົດບາດເຫຼົ່ານີ້ຜ່ານ guard ໄປເລີຍໂດຍບໍ່ມີ request.shift ແລ້ວ
+     * ຟັງຊັນ Buyback / ປ່ຽນເປັນເງິນ / ສິນເຊື່ອ ທີ່ຕ້ອງການ shiftId ຈະປະຕິເສດ
+     * ທຸກຄັ້ງ — ຜົນຄື Admin ສ້າງລາຍການບໍ່ໄດ້ເລີຍ ("ໃຊ້ງານບໍ່ໄດ້").
+     */
+    if (!SHIFT_BOUND_ROLES.has(user.role)) {
+      if (shift && shift.status === 'OPEN') request.shift = shift;
+      return true;
+    }
 
     if (!shift) {
       throw new ConflictException('ກະລຸນາກົດ "ເປີດກະ" ກ່ອນເຮັດທຸລະກຳ');

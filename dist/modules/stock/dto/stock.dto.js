@@ -18,12 +18,14 @@ class StockLineDto {
     goldSkuId;
     /** Stock (OLD) lines reference a ປະເພດຄຳ. */
     goldTypeId;
+    /** ລາຍການຄຳ — ຝັ່ງ OLD ບໍ່ມີ SKU, ແຕ່ຍັງຢາກຮູ້ວ່າເປັນສາຍແຂນ ຫຼື ແຫວນ. */
+    goldItemId;
     /** ໝວດ (ຮູບປະພັນ / ແທ່ງ) — Stock OLD IN ເທົ່ານັ້ນ. */
     oldCategory;
     weightG;
     quantity;
     static _OPENAPI_METADATA_FACTORY() {
-        return { goldSkuId: { required: false, type: () => String, description: "Stock (NEW) lines reference a SKU." }, goldTypeId: { required: false, type: () => String, description: "Stock (OLD) lines reference a \u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3." }, oldCategory: { required: false, description: "\u0EDD\u0EA7\u0E94 (\u0EAE\u0EB9\u0E9A\u0E9B\u0EB0\u0E9E\u0EB1\u0E99 / \u0EC1\u0E97\u0EC8\u0E87) \u2014 Stock OLD IN \u0EC0\u0E97\u0EBB\u0EC8\u0EB2\u0E99\u0EB1\u0EC9\u0E99.", enum: ["JEWELRY", "BAR"], enum: ['JEWELRY', 'BAR'] }, weightG: { required: true, type: () => String }, quantity: { required: true, type: () => Number, minimum: 1 } };
+        return { goldSkuId: { required: false, type: () => String, description: "Stock (NEW) lines reference a SKU." }, goldTypeId: { required: false, type: () => String, description: "Stock (OLD) lines reference a \u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3." }, goldItemId: { required: false, type: () => String, description: "\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99\u0E84\u0EB3 \u2014 \u0E9D\u0EB1\u0EC8\u0E87 OLD \u0E9A\u0ECD\u0EC8\u0EA1\u0EB5 SKU, \u0EC1\u0E95\u0EC8\u0E8D\u0EB1\u0E87\u0EA2\u0EB2\u0E81\u0EAE\u0EB9\u0EC9\u0EA7\u0EC8\u0EB2\u0EC0\u0E9B\u0EB1\u0E99\u0EAA\u0EB2\u0E8D\u0EC1\u0E82\u0E99 \u0EAB\u0EBC\u0EB7 \u0EC1\u0EAB\u0EA7\u0E99." }, oldCategory: { required: false, description: "\u0EDD\u0EA7\u0E94 (\u0EAE\u0EB9\u0E9A\u0E9B\u0EB0\u0E9E\u0EB1\u0E99 / \u0EC1\u0E97\u0EC8\u0E87) \u2014 Stock OLD IN \u0EC0\u0E97\u0EBB\u0EC8\u0EB2\u0E99\u0EB1\u0EC9\u0E99.", enum: ["JEWELRY", "BAR"], enum: ['JEWELRY', 'BAR'] }, weightG: { required: true, type: () => String }, quantity: { required: true, type: () => Number, minimum: 1 } };
     }
 }
 exports.StockLineDto = StockLineDto;
@@ -37,6 +39,11 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], StockLineDto.prototype, "goldTypeId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], StockLineDto.prototype, "goldItemId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)(['JEWELRY', 'BAR']),

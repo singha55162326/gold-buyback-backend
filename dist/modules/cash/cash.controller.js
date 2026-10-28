@@ -22,6 +22,16 @@ const requires_shift_decorator_1 = require("../../common/decorators/requires-shi
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const swagger_1 = require("@nestjs/swagger");
 const history_range_dto_1 = require("../../common/dto/history-range.dto");
+/**
+ * ທີ່ມາຂອງເງິນສຳລັບໜ້າ Bank (To Day).
+ *
+ * ລູກຄ້າກຳນົດວ່າ ໜ້ານີ້ນັບສະເພາະເງິນທີ່ເຂົ້າ-ອອກຜ່ານໜ້າຮ້ານ (Buyback,
+ * ປ່ຽນເປັນເງິນ, ສິນເຊື່ອ) ບໍ່ລວມການຝາກ/ຖອນຂອງການເງິນ. ບໍ່ສົ່ງ sources
+ * ມາ = ນັບທັງໝົດຄືເກົ່າ.
+ */
+const COUNTER_SOURCES = {
+    counter: ['Buyback', 'GoldExchange', 'GoldCredit'],
+};
 let CashController = class CashController {
     cash;
     constructor(cash) {
@@ -48,6 +58,10 @@ let CashController = class CashController {
     cashBalances() {
         return this.cash.cashBalances();
     }
+    /** ຍອດໃນກະເປົ໋າເງິນສົດຂອງຜູ້ໃຊ້ທີ່ກຳລັງເປີດກະຢູ່. */
+    wallet(user) {
+        return this.cash.walletBalance(user.id);
+    }
     cashHistory(query, user) {
         return this.cash.cashHistory(query, user);
     }
@@ -55,11 +69,11 @@ let CashController = class CashController {
         return this.cash.createCashTransaction(dto, user);
     }
     /* ---- §3.7 Module Bank ---- */
-    bankBalances() {
-        return this.cash.bankBalances();
+    bankBalances(sources) {
+        return this.cash.bankBalances(undefined, COUNTER_SOURCES[sources ?? '']);
     }
-    bankHistory(query, user) {
-        return this.cash.bankHistory(query, user);
+    bankHistory(query, user, sources) {
+        return this.cash.bankHistory(query, user, COUNTER_SOURCES[sources ?? '']);
     }
     createBankTransaction(dto, user) {
         return this.cash.createBankTransaction(dto, user);
@@ -121,6 +135,15 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CashController.prototype, "cashBalances", null);
 __decorate([
+    openapi.ApiOperation({ summary: "\u0E8D\u0EAD\u0E94\u0EC3\u0E99\u0E81\u0EB0\u0EC0\u0E9B\u0EBB\u0ECB\u0EB2\u0EC0\u0E87\u0EB4\u0E99\u0EAA\u0EBB\u0E94\u0E82\u0EAD\u0E87\u0E9C\u0EB9\u0EC9\u0EC3\u0E8A\u0EC9\u0E97\u0EB5\u0EC8\u0E81\u0EB3\u0EA5\u0EB1\u0E87\u0EC0\u0E9B\u0EB5\u0E94\u0E81\u0EB0\u0EA2\u0EB9\u0EC8." }),
+    (0, common_1.Get)('wallet'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], CashController.prototype, "wallet", null);
+__decorate([
     (0, common_1.Get)('history'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)()),
@@ -140,19 +163,23 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CashController.prototype, "createCashTransaction", null);
 __decorate([
+    openapi.ApiQuery({ name: "sources", required: false }),
     (0, common_1.Get)('bank/balances'),
     openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)('sources')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], CashController.prototype, "bankBalances", null);
 __decorate([
+    openapi.ApiQuery({ name: "sources", required: false }),
     (0, common_1.Get)('bank/history'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __param(2, (0, common_1.Query)('sources')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
+    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
     __metadata("design:returntype", void 0)
 ], CashController.prototype, "bankHistory", null);
 __decorate([
