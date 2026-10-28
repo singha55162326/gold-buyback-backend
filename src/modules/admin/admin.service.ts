@@ -161,88 +161,90 @@ export class AdminService {
    * the database so the ledger it touched can still be explained, and so a
    * mistaken deletion can be reviewed.
    */
+  /**
+   * Module Deleted List — ທຸກລາຍການທີ່ຖືກລຶບ ຈາກທຸກ Module.
+   *
+   * ລະບົບລຶບແບບ tombstone (ຕັ້ງ deletedAt) ທົ່ວທັງລະບົບ, ສະນັ້ນໜ້ານີ້ຈຶ່ງ
+   * ກວາດທຸກຕາຕະລາງທີ່ມີ deletedAt ແທນທີ່ຈະເລືອກມາບາງອັນ — ລູກຄ້າແຈ້ງວ່າ
+   * ເຫັນແຕ່ SKU ເພາະແຕ່ກ່ອນລະບຸໄວ້ພຽງ 6 ຕາຕະລາງ.
+   *
+   * ຊື່ຜູ້ລຶບ ດຶງຈາກ Audit Log ເປັນ query ດຽວ (ບໍ່ແມ່ນຕໍ່ແຖວ): ຕາຕະລາງສ່ວນ
+   * ຫຼາຍບໍ່ໄດ້ເກັບ deletedById ໄວ້ ແຕ່ການລຶບທຸກຄັ້ງຂຽນ Audit Log ສະເໝີ.
+   */
   async deletedList() {
-    const [buybacks, exchanges, credits, orders, movements, skus] = await Promise.all([
-      this.prisma.buyback.findMany({
-        where: { deletedAt: { not: null } },
-        select: { id: true, code: true, deletedAt: true, payableAmount: true },
-      }),
-      this.prisma.goldExchange.findMany({
-        where: { deletedAt: { not: null } },
-        select: { id: true, code: true, deletedAt: true, totalPayable: true },
-      }),
-      this.prisma.goldCredit.findMany({
-        where: { deletedAt: { not: null } },
-        select: { id: true, code: true, deletedAt: true, outstanding: true },
-      }),
-      this.prisma.order.findMany({
-        where: { deletedAt: { not: null } },
-        select: { id: true, code: true, deletedAt: true, totalAmount: true },
-      }),
-      this.prisma.stockMovement.findMany({
-        where: { deletedAt: { not: null } },
-        select: { id: true, code: true, deletedAt: true, totalGoldG: true },
-      }),
-      this.prisma.goldSku.findMany({
-        where: { deletedAt: { not: null } },
-        select: { id: true, fullSkuName: true, deletedAt: true },
-      }),
+    const gone = { deletedAt: { not: null } } as const;
+    const pick = { id: true, deletedAt: true } as const;
+
+    const [
+      buybacks, exchanges, credits, orders, movements, skus,
+      goldTypes, goldItems, cabinets, partners, ieCategories, ieTransactions,
+      aparCategories, consignments, handovers, users, jewelryFees, barFees,
+      cashTxns, bankTxns,
+    ] = await Promise.all([
+      this.prisma.buyback.findMany({ where: gone, select: { ...pick, code: true, payableAmount: true } }),
+      this.prisma.goldExchange.findMany({ where: gone, select: { ...pick, code: true, totalPayable: true } }),
+      this.prisma.goldCredit.findMany({ where: gone, select: { ...pick, code: true, outstanding: true } }),
+      this.prisma.order.findMany({ where: gone, select: { ...pick, code: true, totalAmount: true } }),
+      this.prisma.stockMovement.findMany({ where: gone, select: { ...pick, code: true, totalGoldG: true } }),
+      this.prisma.goldSku.findMany({ where: gone, select: { ...pick, code: true, fullSkuName: true } }),
+      this.prisma.goldType.findMany({ where: gone, select: { ...pick, code: true, nameLo: true } }),
+      this.prisma.goldItem.findMany({ where: gone, select: { ...pick, code: true, nameLo: true } }),
+      this.prisma.cabinet.findMany({ where: gone, select: { ...pick, code: true, nameLo: true } }),
+      this.prisma.partnerSource.findMany({ where: gone, select: { ...pick, code: true, nameLo: true } }),
+      this.prisma.incomeExpenseCategory.findMany({ where: gone, select: { ...pick, code: true, nameLo: true } }),
+      this.prisma.incomeExpenseTransaction.findMany({ where: gone, select: { ...pick, code: true, amount: true, currency: true } }),
+      this.prisma.apArCashCategory.findMany({ where: gone, select: { ...pick, code: true, nameLo: true } }),
+      this.prisma.consignment.findMany({ where: gone, select: { ...pick, code: true, totalWeightG: true } }),
+      this.prisma.goldHandover.findMany({ where: gone, select: { ...pick, code: true, weightG: true } }),
+      this.prisma.user.findMany({ where: gone, select: { ...pick, username: true, fullName: true } }),
+      this.prisma.jewelryConversionFee.findMany({ where: gone, select: { ...pick, tierCode: true } }),
+      this.prisma.barConversionFee.findMany({ where: gone, select: { ...pick, weightG: true } }),
+      this.prisma.cashTransaction.findMany({ where: gone, select: { ...pick, amount: true, currency: true } }),
+      this.prisma.bankTransaction.findMany({ where: gone, select: { ...pick, amount: true, currency: true } }),
     ]);
 
+    const money = (v: Prisma.Decimal, currency = 'LAK') => `${v.toFixed(0)} ${currency}`;
+
     const rows = [
-      ...buybacks.map((r) => ({
-        entity: 'Buyback',
-        labelLo: 'Buyback',
-        id: r.id,
-        code: r.code,
-        detail: `${r.payableAmount.toFixed(0)} LAK`,
-        deletedAt: r.deletedAt,
-      })),
-      ...exchanges.map((r) => ({
-        entity: 'GoldExchange',
-        labelLo: 'ປ່ຽນເປັນເງິນ',
-        id: r.id,
-        code: r.code,
-        detail: `${r.totalPayable.toFixed(0)} LAK`,
-        deletedAt: r.deletedAt,
-      })),
-      ...credits.map((r) => ({
-        entity: 'GoldCredit',
-        labelLo: 'ສິນເຊື່ອ',
-        id: r.id,
-        code: r.code,
-        detail: `${r.outstanding.toFixed(0)} LAK`,
-        deletedAt: r.deletedAt,
-      })),
-      ...orders.map((r) => ({
-        entity: 'Order',
-        labelLo: 'Order',
-        id: r.id,
-        code: r.code,
-        detail: `${r.totalAmount.toFixed(0)} LAK`,
-        deletedAt: r.deletedAt,
-      })),
-      ...movements.map((r) => ({
-        entity: 'StockMovement',
-        labelLo: 'Stock Movement',
-        id: r.id,
-        code: r.code,
-        detail: `${r.totalGoldG.toFixed()} g`,
-        deletedAt: r.deletedAt,
-      })),
-      ...skus.map((r) => ({
-        entity: 'GoldSku',
-        labelLo: 'SKU',
-        id: r.id,
-        code: r.fullSkuName,
-        detail: '',
-        deletedAt: r.deletedAt,
-      })),
+      ...buybacks.map((r) => ({ entity: 'Buyback', labelLo: 'Buyback', id: r.id, code: r.code, detail: money(r.payableAmount), deletedAt: r.deletedAt })),
+      ...exchanges.map((r) => ({ entity: 'GoldExchange', labelLo: 'ປ່ຽນເປັນເງິນ', id: r.id, code: r.code, detail: money(r.totalPayable), deletedAt: r.deletedAt })),
+      ...credits.map((r) => ({ entity: 'GoldCredit', labelLo: 'ສິນເຊື່ອ', id: r.id, code: r.code, detail: money(r.outstanding), deletedAt: r.deletedAt })),
+      ...orders.map((r) => ({ entity: 'Order', labelLo: 'Order', id: r.id, code: r.code, detail: money(r.totalAmount), deletedAt: r.deletedAt })),
+      ...movements.map((r) => ({ entity: 'StockMovement', labelLo: 'ລາຍການເຄື່ອນໄຫວສາງ', id: r.id, code: r.code, detail: `${r.totalGoldG.toFixed()} g`, deletedAt: r.deletedAt })),
+      ...skus.map((r) => ({ entity: 'GoldSku', labelLo: 'SKU ນ້ຳໜັກຄຳ', id: r.id, code: r.code ?? '—', detail: r.fullSkuName, deletedAt: r.deletedAt })),
+      ...goldTypes.map((r) => ({ entity: 'GoldType', labelLo: 'ປະເພດຄຳ', id: r.id, code: r.code, detail: r.nameLo, deletedAt: r.deletedAt })),
+      ...goldItems.map((r) => ({ entity: 'GoldItem', labelLo: 'ລາຍການຄຳ', id: r.id, code: r.code, detail: r.nameLo, deletedAt: r.deletedAt })),
+      ...cabinets.map((r) => ({ entity: 'Cabinet', labelLo: 'ຕູ້ເຄື່ອງ', id: r.id, code: r.code, detail: r.nameLo, deletedAt: r.deletedAt })),
+      ...partners.map((r) => ({ entity: 'PartnerSource', labelLo: 'ແຫຼ່ງຮັບເຂົ້າ/ສົ່ງອອກ', id: r.id, code: r.code, detail: r.nameLo, deletedAt: r.deletedAt })),
+      ...ieCategories.map((r) => ({ entity: 'IncomeExpenseCategory', labelLo: 'ລາຍການຮັບຈ່າຍ', id: r.id, code: r.code, detail: r.nameLo, deletedAt: r.deletedAt })),
+      ...ieTransactions.map((r) => ({ entity: 'IncomeExpenseTransaction', labelLo: 'ທຸລະກຳ ຮັບ/ຈ່າຍ', id: r.id, code: r.code, detail: money(r.amount, r.currency), deletedAt: r.deletedAt })),
+      ...aparCategories.map((r) => ({ entity: 'ApArCashCategory', labelLo: 'ລາຍການ AP-AR (Cash)', id: r.id, code: r.code, detail: r.nameLo, deletedAt: r.deletedAt })),
+      ...consignments.map((r) => ({ entity: 'Consignment', labelLo: 'ຝາກສິນຄ້າ', id: r.id, code: r.code, detail: `${r.totalWeightG.toFixed()} g`, deletedAt: r.deletedAt })),
+      ...handovers.map((r) => ({ entity: 'GoldHandover', labelLo: 'ມອບຄຳລະຫວ່າງມື້', id: r.id, code: r.code, detail: `${r.weightG.toFixed()} g`, deletedAt: r.deletedAt })),
+      ...users.map((r) => ({ entity: 'User', labelLo: 'ຜູ້ໃຊ້ງານ', id: r.id, code: r.username, detail: r.fullName, deletedAt: r.deletedAt })),
+      ...jewelryFees.map((r) => ({ entity: 'JewelryConversionFee', labelLo: 'ຄ່າປ່ຽນຮູບປະພັນ', id: r.id, code: r.tierCode, detail: '', deletedAt: r.deletedAt })),
+      ...barFees.map((r) => ({ entity: 'BarConversionFee', labelLo: 'ຄ່າປ່ຽນຄຳແທ່ງ', id: r.id, code: `${r.weightG.toFixed()} g`, detail: '', deletedAt: r.deletedAt })),
+      ...cashTxns.map((r) => ({ entity: 'CashTransaction', labelLo: 'ທຸລະກຳເງິນສົດ', id: r.id, code: '—', detail: money(r.amount, r.currency), deletedAt: r.deletedAt })),
+      ...bankTxns.map((r) => ({ entity: 'BankTransaction', labelLo: 'ທຸລະກຳ Bank', id: r.id, code: '—', detail: money(r.amount, r.currency), deletedAt: r.deletedAt })),
     ];
 
-    return rows.sort(
-      (a, b) => (b.deletedAt?.getTime() ?? 0) - (a.deletedAt?.getTime() ?? 0),
-    );
+    // ຜູ້ລຶບ — ຈາກ Audit Log ຂອງແຖວທີ່ກຳລັງສະແດງ.
+    const logs = rows.length
+      ? await this.prisma.auditLog.findMany({
+          where: { action: 'DELETE', entityId: { in: rows.map((r) => r.id) } },
+          orderBy: { createdAt: 'desc' },
+          select: { entityId: true, actor: { select: { fullName: true } } },
+        })
+      : [];
+    const deletedBy = new Map<string, string>();
+    for (const log of logs) {
+      if (!log.entityId || deletedBy.has(log.entityId)) continue;
+      deletedBy.set(log.entityId, log.actor?.fullName ?? '—');
+    }
+
+    return rows
+      .map((r) => ({ ...r, deletedBy: deletedBy.get(r.id) ?? '—' }))
+      .sort((a, b) => (b.deletedAt?.getTime() ?? 0) - (a.deletedAt?.getTime() ?? 0));
   }
 
   /* ---------------------------------------------------------------- *

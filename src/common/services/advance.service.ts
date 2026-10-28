@@ -15,6 +15,13 @@ export interface AdvancePostingInput {
   currency: Currency;
   amount: Decimal;
   direction: 'IN' | 'OUT';
+  /**
+   * ບັນທຶກແຖວ ເຖິງວ່າຈຳນວນເງິນເປັນ 0.
+   *
+   * ໃຊ້ຕອນສ້າງ Order ທີ່ຍັງບໍ່ໄດ້ຮັບເງິນມັດຈຳ: ລູກຄ້າຕ້ອງການເຫັນ Order ນັ້ນ
+   * ຢູ່ Module Advance ຕັ້ງແຕ່ສ້າງ ບໍ່ແມ່ນລໍຖ້າຈົນມີເງິນເຂົ້າ.
+   */
+  allowZero?: boolean;
   method?: PaymentMethod;
   bankAccountId?: string | null;
   note?: string;
@@ -41,7 +48,7 @@ export class AdvanceService {
   ) {}
 
   async post(tx: Prisma.TransactionClient, input: AdvancePostingInput) {
-    if (input.amount.lte(0)) return null;
+    if (input.amount.lte(0) && !input.allowZero) return null;
 
     const businessDate = BusinessDayService.toDateOnly();
     const isIn = input.direction === 'IN';

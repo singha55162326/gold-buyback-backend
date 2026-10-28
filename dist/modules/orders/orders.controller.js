@@ -37,6 +37,10 @@ let OrdersController = class OrdersController {
     updateStatus(id, dto, user) {
         return this.orders.updateStatus(id, dto, user);
     }
+    /** ຈ່າຍເງິນຄືນທີ່ຮັບຈາກລູກຄ້າ — ຕອນລູກຄ້າມາຮັບເຄື່ອງ. */
+    refund(id, dto, user) {
+        return this.orders.refund(id, dto, user);
+    }
     /** ຊຳລະເພີ່ມ — auto-completes the order when the balance reaches zero. */
     addReceipt(id, dto, user) {
         return this.orders.addReceipt(id, dto, user);
@@ -75,6 +79,18 @@ __decorate([
     __metadata("design:paramtypes", [String, order_dto_1.UpdateOrderStatusDto, Object]),
     __metadata("design:returntype", void 0)
 ], OrdersController.prototype, "updateStatus", null);
+__decorate([
+    openapi.ApiOperation({ summary: "\u0E88\u0EC8\u0EB2\u0E8D\u0EC0\u0E87\u0EB4\u0E99\u0E84\u0EB7\u0E99\u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A\u0E88\u0EB2\u0E81\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2 \u2014 \u0E95\u0EAD\u0E99\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0EA1\u0EB2\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }),
+    (0, roles_decorator_1.Roles)('FINANCIAL_CONTROLLER', 'PAYMENT', 'ADMIN', 'MANAGER'),
+    (0, common_1.Post)(':id/refund'),
+    openapi.ApiResponse({ status: 201, type: Object }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, order_dto_1.ReceiveOrderDto, Object]),
+    __metadata("design:returntype", void 0)
+], OrdersController.prototype, "refund", null);
 __decorate([
     openapi.ApiOperation({ summary: "\u0E8A\u0EB3\u0EA5\u0EB0\u0EC0\u0E9E\u0EB5\u0EC8\u0EA1 \u2014 auto-completes the order when the balance reaches zero." }),
     (0, roles_decorator_1.Roles)('FINANCIAL_CONTROLLER', 'PAYMENT', 'ADMIN', 'MANAGER'),

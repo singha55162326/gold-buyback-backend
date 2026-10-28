@@ -515,6 +515,7 @@ model GoldType {
   movementLines    StockMovementLine[]
 
   @@map("gold_types")
+  buybackLines BuybackLine[]
 }
 
 /// ລາຍການຄຳ — ສາຍແຂນ, ສາຍຄໍ, ກີ້, ແຫວນ, ຕ່າງຫູ, ສາຍແອວ, ຄຳແທ່ງ.
@@ -535,6 +536,9 @@ model GoldItem {
   orders   Order[]
 
   @@map("gold_items")
+  movementLines StockMovementLine[]
+  buybackLines BuybackLine[]
+  orderLines   OrderLine[]
 }
 
 /// TOR §3.7 — ລະບົບຈັດການ SKU ນ້ຳໜັກຂອງຄຳ.
@@ -542,6 +546,8 @@ model GoldItem {
 /// weightG / 15 — never supplied by the client.
 model GoldSku {
   id          String   @id @default(cuid())
+  /// ລະຫັດ SKU ອັດຕະໂນມັດ (SKU-001). ແຖວເກົ່າກ່ອນມີຖັນນີ້ ອາດເປັນ null.
+  code        String?  @unique
   goldItemId  String
   nameLo      String
   weightG     Decimal  @db.Decimal(18, 4)
@@ -873,12 +879,44 @@ model Buyback {
   goldType GoldType         @relation(fields: [goldTypeId], references: [id])
   goldItem GoldItem?        @relation(fields: [goldItemId], references: [id])
   payments BuybackPayment[]
+  lines    BuybackLine[]
   /// ມີແຖວນີ້ = ລາຍການນີ້ຖືກມອບເຂົ້າສາງແລ້ວ (ຄຳຕົ້ມ).
   handoverItem GoldHandoverItem?
 
   @@index([status, createdAt])
   @@index([createdAt])
   @@map("buybacks")
+}
+
+/// ແຖວລາຍການຄຳໃນບິນ Buyback ໜຶ່ງ (TOR §5.1 — ລູກຄ້າຂໍໃຫ້ Add ໄດ້ຫຼາຍລາຍການ).
+///
+/// ລາຄາຄິດເປັນແຖວ ແລ້ວຫົວບິນເກັບຍອດລວມ: ສະຫຼຸບ ແລະ ການລົງສາງ ຈຶ່ງແຍກຕາມ
+/// ປະເພດຄຳໄດ້ຖືກຕ້ອງ ເຖິງວ່າບິນດຽວຈະມີຫຼາຍປະເພດ.
+model BuybackLine {
+  id               String   @id @default(cuid())
+  buybackId        String
+  goldTypeId       String
+  goldItemId       String?
+  weightG          Decimal  @db.Decimal(18, 4)
+  quantity         Int
+  /// %ຄຳ — ສະເພາະ ຄຳຕົ້ມ (OTHER_SHOP).
+  goldPercent      Decimal? @db.Decimal(18, 4)
+  /// ລາຄາຊື້ຄືນໜ້າຮ້ານ ຂອງແຖວນີ້.
+  shopBuybackPrice Decimal  @db.Decimal(18, 4)
+  /// ຄ່າອ່ອນ / ຄ່າຫັກ ຂອງແຖວນີ້.
+  deduction        Decimal  @default(0) @db.Decimal(18, 4)
+  /// ລາຄາທີ່ຕ້ອງຈ່າຍ ຂອງແຖວນີ້.
+  payableAmount    Decimal  @db.Decimal(18, 4)
+  /// ສູດທີ່ໃຊ້ (§5.1) — ເກັບໄວ້ກວດຄືນ.
+  branch           String?
+  sortOrder        Int      @default(0)
+
+  buyback  Buyback   @relation(fields: [buybackId], references: [id], onDelete: Cascade)
+  goldType GoldType  @relation(fields: [goldTypeId], references: [id])
+  goldItem GoldItem? @relation(fields: [goldItemId], references: [id])
+
+  @@index([buybackId])
+  @@map("buyback_lines")
 }
 
 /// How the buyback was paid out. CHANGE (ເງິນທອນ) is LAK only:
@@ -1085,6 +1123,8 @@ model Order {
   goldItemId     String
   /// ຊ່າງ/Supplier ທີ່ສັ່ງເຮັດ — ຕັ້ງເມື່ອປ່ຽນເປັນ 'ສັ່ງຊ່າງ ສຳເລັດ'.
   supplierId     String?
+  /// ວັນທີສັ່ງຊ່າງ — ຕັ້ງເມື່ອປ່ຽນເປັນ 'ສັ່ງຊ່າງ ສຳເລັດ'.
+  sentToSmithAt       DateTime?
   /// ວັນທີຮັບເຄື່ອງຈາກຊ່າງ.
   receivedFromSmithAt DateTime?
   /// ວັນທີລູກຄ້າມາຮັບເຄື່ອງ.
@@ -1109,6 +1149,7 @@ model Order {
   customer Customer       @relation(fields: [customerId], references: [id])
   goldItem GoldItem       @relation(fields: [goldItemId], references: [id])
   supplier PartnerSource? @relation(fields: [supplierId], references: [id])
+  lines    OrderLine[]
 
   receipts      OrderReceipt[]
   statusHistory OrderStatusHistory[]
@@ -1118,6 +1159,26 @@ model Order {
   @@index([billNo])
   @@index([createdAt])
   @@map("orders")
+}
+
+/// ແຖວລາຍການໃນ Order ໜຶ່ງ (TOR §7 — ລູກຄ້າຂໍໃຫ້ Add ໄດ້ຫຼາຍລາຍການ).
+/// ຫົວບິນເກັບຍອດລວມ ເພື່ອໃຫ້ການຮັບເງິນ ແລະ Advance ຍັງອ່ານບ່ອນດຽວ.
+model OrderLine {
+  id         String   @id @default(cuid())
+  orderId    String
+  goldItemId String
+  weightG    Decimal  @db.Decimal(18, 4)
+  quantity   Int
+  /// ຍອດເງິນຂອງແຖວນີ້ (ຖ້າແຍກໄວ້); ວ່າງ = ຄິດລວມຢູ່ຫົວບິນ.
+  amount     Decimal? @db.Decimal(18, 4)
+  note       String?
+  sortOrder  Int      @default(0)
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  goldItem GoldItem @relation(fields: [goldItemId], references: [id])
+
+  @@index([orderId])
+  @@map("order_lines")
 }
 
 /// Money in from, or refunded to, the customer against an order.
@@ -1228,6 +1289,8 @@ model StockMovementLine {
   movementId String
   goldSkuId  String?
   goldTypeId String?
+  /// ລາຍການຄຳ (ສາຍແຂນ / ແຫວນ …) — ໃຊ້ຢູ່ Stock OLD ທີ່ບໍ່ມີ SKU.
+  goldItemId String?
   /// ໝວດ (ຮູບປະພັນ / ແທ່ງ) — ຖາມສະເພາະ Stock OLD IN.
   oldCategory OldGoldCategory?
   weightG    Decimal @db.Decimal(18, 4)
@@ -1241,6 +1304,7 @@ model StockMovementLine {
   movement StockMovement @relation(fields: [movementId], references: [id], onDelete: Cascade)
   goldSku  GoldSku?      @relation(fields: [goldSkuId], references: [id])
   goldType GoldType?     @relation(fields: [goldTypeId], references: [id])
+  goldItem GoldItem?     @relation(fields: [goldItemId], references: [id])
 
   @@index([movementId])
   @@map("stock_movement_lines")

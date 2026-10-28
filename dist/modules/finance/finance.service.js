@@ -204,7 +204,13 @@ let FinanceService = class FinanceService {
             }),
             this.prisma.incomeExpenseTransaction.count({ where }),
         ]);
-        return this.range.page(rows, total, range);
+        // ຜູ້ລົງລາຍການ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການບັນທຶກ.
+        const users = await this.prisma.user.findMany({
+            where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
+            select: { id: true, fullName: true },
+        });
+        const nameById = new Map(users.map((u) => [u.id, u.fullName]));
+        return this.range.page(rows.map((r) => ({ ...r, createdBy: nameById.get(r.createdById) ?? '—' })), total, range);
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — Module ຝາກສິນຄ້າ
@@ -280,10 +286,20 @@ let FinanceService = class FinanceService {
     }
     async consignments(status, query, user) {
         const range = this.range.resolve(query, user);
+        /*
+         * ຄຳທີ່ຍັງຝາກຢູ່ ຕ້ອງຄ້າງຢູ່ໜ້າຈໍຈົນກວ່າຈະສົ່ງຄືນ.
+         *
+         * ຖ້າກອງຕາມວັນທີສ້າງຢ່າງດຽວ ລາຍການທີ່ຮັບຝາກມື້ວານຈະຫາຍໄປຈາກໜ້າຈໍພໍ
+         * ຂຶ້ນມື້ໃໝ່ ທັງທີ່ຄຳຍັງຢູ່ໃນຮ້ານ — ພະນັກງານຈຶ່ງບໍ່ຮູ້ວ່າຍັງຖືຂອງໃຜຢູ່.
+         * ສະນັ້ນ: ລາຍການໃນຊ່ວງວັນທີ ບວກກັບ ລາຍການທີ່ຍັງ HELD ທັງໝົດ.
+         */
+        const inRange = { createdAt: history_range_service_1.HistoryRangeService.window(range) };
+        const stillHeld = { status: 'HELD' };
         const where = {
             deletedAt: null,
-            createdAt: history_range_service_1.HistoryRangeService.window(range),
-            ...(status ? { status } : {}),
+            ...(status
+                ? { status, ...(status === 'HELD' ? {} : inRange) }
+                : { OR: [inRange, stillHeld] }),
         };
         const [rows, total] = await this.prisma.$transaction([
             this.prisma.consignment.findMany({

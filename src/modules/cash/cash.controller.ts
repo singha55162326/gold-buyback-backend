@@ -13,6 +13,17 @@ import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/cur
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
+/**
+ * ທີ່ມາຂອງເງິນສຳລັບໜ້າ Bank (To Day).
+ *
+ * ລູກຄ້າກຳນົດວ່າ ໜ້ານີ້ນັບສະເພາະເງິນທີ່ເຂົ້າ-ອອກຜ່ານໜ້າຮ້ານ (Buyback,
+ * ປ່ຽນເປັນເງິນ, ສິນເຊື່ອ) ບໍ່ລວມການຝາກ/ຖອນຂອງການເງິນ. ບໍ່ສົ່ງ sources
+ * ມາ = ນັບທັງໝົດຄືເກົ່າ.
+ */
+const COUNTER_SOURCES: Record<string, string[] | undefined> = {
+  counter: ['Buyback', 'GoldExchange', 'GoldCredit'],
+};
+
 @ApiTags('cash')
 @ApiBearerAuth('bearer')
 @Controller('cash')
@@ -63,6 +74,12 @@ export class CashController {
     return this.cash.cashBalances();
   }
 
+  /** ຍອດໃນກະເປົ໋າເງິນສົດຂອງຜູ້ໃຊ້ທີ່ກຳລັງເປີດກະຢູ່. */
+  @Get('wallet')
+  wallet(@CurrentUser() user: AuthenticatedUser) {
+    return this.cash.walletBalance(user.id);
+  }
+
   @Get('history')
   cashHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
     return this.cash.cashHistory(query, user);
@@ -80,13 +97,17 @@ export class CashController {
   /* ---- §3.7 Module Bank ---- */
 
   @Get('bank/balances')
-  bankBalances() {
-    return this.cash.bankBalances();
+  bankBalances(@Query('sources') sources?: string) {
+    return this.cash.bankBalances(undefined, COUNTER_SOURCES[sources ?? ''] );
   }
 
   @Get('bank/history')
-  bankHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.cash.bankHistory(query, user);
+  bankHistory(
+    @Query() query: HistoryRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('sources') sources?: string,
+  ) {
+    return this.cash.bankHistory(query, user, COUNTER_SOURCES[sources ?? '']);
   }
 
   @Roles('FINANCIAL_CONTROLLER', 'ADMIN', 'MANAGER')

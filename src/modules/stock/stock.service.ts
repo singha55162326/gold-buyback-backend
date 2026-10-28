@@ -125,6 +125,7 @@ export class StockService {
             create: lines.map((line) => ({
               goldSkuId: line.goldSkuId ?? null,
               goldTypeId: line.goldTypeId ?? null,
+              goldItemId: line.goldItemId ?? null,
               oldCategory: dto.scope === 'OLD' ? (line.oldCategory ?? null) : null,
               weightG: D(dec(line.weightG)),
               quantity: line.quantity,
@@ -979,11 +980,18 @@ export class StockService {
         where: { isStockType: true, deletedAt: null },
         orderBy: { sortOrder: 'asc' },
       }),
-      this.prisma.buyback.findMany({
+      /*
+       * ອ່ານເປັນ "ແຖວລາຍການ" ບໍ່ແມ່ນ "ບິນ": ບິນດຽວມີຫຼາຍປະເພດຄຳໄດ້ ແລະ
+       * ສະຫຼຸບນີ້ແຍກຕາມປະເພດຄຳ. ບິນເກົ່າກ່ອນມີຕາຕະລາງແຖວ ຖືກຍ້າຍເຂົ້າ
+       * `buyback_lines` ຕອນ migrate ແລ້ວ ຈຶ່ງອ່ານບ່ອນດຽວໄດ້ໝົດ.
+       */
+      this.prisma.buybackLine.findMany({
         where: {
-          deletedAt: null,
-          status: 'COMPLETED',
-          createdAt: { gte: businessDate, lt: tomorrow },
+          buyback: {
+            deletedAt: null,
+            status: 'COMPLETED',
+            createdAt: { gte: businessDate, lt: tomorrow },
+          },
         },
         select: { goldTypeId: true, weightG: true, quantity: true, payableAmount: true },
       }),
@@ -1132,7 +1140,11 @@ export class StockService {
         deletedAt: null,
         status: 'COMPLETED',
         handoverItem: null,
-        ...(goldTypeId ? { goldTypeId } : { goldType: { code: 'BOILED' } }),
+        // ບິນທີ່ "ມີແຖວ" ເປັນຄຳຕົ້ມ — ບໍ່ແມ່ນອີງແຕ່ປະເພດຂອງຫົວບິນ,
+        // ເພາະບິນດຽວປະສົມຫຼາຍປະເພດໄດ້ແລ້ວ.
+        ...(goldTypeId
+          ? { lines: { some: { goldTypeId } } }
+          : { lines: { some: { goldType: { code: 'BOILED' } } } }),
       },
       select: {
         id: true, code: true, weightG: true, quantity: true,

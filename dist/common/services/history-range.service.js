@@ -46,7 +46,9 @@ let HistoryRangeService = class HistoryRangeService {
         return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
     }
     resolve(query, user) {
-        const today = business_day_service_1.BusinessDayService.toDateOnly();
+        // ຂອບຂອງຊ່ວງເປັນທ່ຽງຄືນທ້ອງຖິ່ນ (ຄືກັນກັບ `parse` ຂ້າງເທິງ); ຖັນວັນທີ
+        // ລ້ວນຖືກປະກອບຄືນເປັນ UTC ຢູ່ `dayWindow`.
+        const today = business_day_service_1.BusinessDayService.localMidnight();
         const rawFrom = query.from_date ?? query.fromDate;
         const rawTo = query.to_date ?? query.toDate;
         let from = rawFrom ? this.parse(rawFrom, 'from_date') : today;

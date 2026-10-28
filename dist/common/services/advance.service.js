@@ -38,7 +38,7 @@ let AdvanceService = class AdvanceService {
         this.range = range;
     }
     async post(tx, input) {
-        if (input.amount.lte(0))
+        if (input.amount.lte(0) && !input.allowZero)
             return null;
         const businessDate = business_day_service_1.BusinessDayService.toDateOnly();
         const isIn = input.direction === 'IN';

@@ -17,6 +17,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PricingContextService } from '../pricing/pricing-context.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import type {
+  BuybackLineDto,
   CreateBuybackDto,
   PreviewBuybackDto,
   ReviewBuybackDto,
@@ -68,42 +69,114 @@ export class BuybackService {
   }
 
   /**
-   * Run the §5.1 calculation without writing anything — backs the live
-   * preview on the Valuer's form.
+   * ແປງ dto ເປັນລາຍການແຖວ.
+   *
+   * ບິນໜຶ່ງມີໄດ້ຫຼາຍລາຍການຄຳ (ທີ່ລູກຄ້າຂໍ). ຖ້າ client ເກົ່າສົ່ງແບບແຖວດຽວມາ
+   * ກໍຫໍ່ໃຫ້ເປັນແຖວດຽວ ເພື່ອໃຫ້ເສັ້ນທາງຄິດລາຄາມີທາງດຽວ.
    */
-  async preview(dto: PreviewBuybackDto) {
-    const goldType = await this.prisma.goldType.findFirst({
-      where: { id: dto.goldTypeId, deletedAt: null },
-    });
-    if (!goldType) throw new NotFoundException('ບໍ່ພົບປະເພດຄຳ');
-
-    const context = await this.pricingContext.load();
-    const kind = dto.source === 'OTHER_SHOP' ? 'BOILED' : this.kindFor(goldType.code);
-
-    if (kind === 'BOILED' && !dto.goldPercent) {
-      throw new BadRequestException('ຄຳຕົ້ມຕ້ອງປ້ອນ %ຄຳ');
+  private toLines(dto: {
+    lines?: BuybackLineDto[];
+    goldTypeId?: string;
+    goldItemId?: string;
+    weightG?: string;
+    quantity?: number;
+    goldPercent?: string;
+    deduction?: string;
+  }): BuybackLineDto[] {
+    if (dto.lines?.length) return dto.lines;
+    if (!dto.goldTypeId || !dto.weightG || !dto.quantity) {
+      throw new BadRequestException('ຕ້ອງມີລາຍການຄຳຢ່າງໜ້ອຍ 1 ລາຍການ');
     }
-
-    const result = calculateBuyback(
+    return [
       {
-        kind,
+        goldTypeId: dto.goldTypeId,
+        goldItemId: dto.goldItemId,
         weightG: dto.weightG,
         quantity: dto.quantity,
         goldPercent: dto.goldPercent,
         deduction: dto.deduction,
       },
-      context.source,
-      context.table,
-    );
+    ];
+  }
+
+  /**
+   * ຄິດລາຄາທຸກແຖວ ດ້ວຍຕາຕະລາງລາຄາຊຸດດຽວກັນ.
+   *
+   * ຄິດເປັນແຖວ ເພາະແຕ່ລະລາຍການອາດຄົນລະປະເພດຄຳ, ຄົນລະນ້ຳໜັກ ແລະ ຄົນລະ %ຄຳ
+   * — ການລວມກ່ອນຄິດຈະໄດ້ລາຄາຜິດ ແລະ ລົງສາງແຍກປະເພດບໍ່ໄດ້.
+   */
+  private async priceLines(
+    source: 'KPV' | 'OTHER_SHOP',
+    lines: BuybackLineDto[],
+    context: Awaited<ReturnType<PricingContextService['load']>>,
+  ) {
+    const typeIds = [...new Set(lines.map((l) => l.goldTypeId))];
+    const goldTypes = await this.prisma.goldType.findMany({
+      where: { id: { in: typeIds }, deletedAt: null },
+    });
+    if (goldTypes.length !== typeIds.length) throw new NotFoundException('ບໍ່ພົບປະເພດຄຳ');
+    const typeById = new Map(goldTypes.map((t) => [t.id, t]));
+
+    return lines.map((line, index) => {
+      const goldType = typeById.get(line.goldTypeId)!;
+      const kind = source === 'OTHER_SHOP' ? 'BOILED' : this.kindFor(goldType.code);
+
+      if (kind === 'BOILED' && !line.goldPercent) {
+        throw new BadRequestException(`ຄຳຕົ້ມຕ້ອງປ້ອນ %ຄຳ (ແຖວທີ ${index + 1})`);
+      }
+
+      const result = calculateBuyback(
+        {
+          kind,
+          weightG: line.weightG,
+          quantity: line.quantity,
+          goldPercent: line.goldPercent,
+          deduction: line.deduction,
+        },
+        context.source,
+        context.table,
+      );
+
+      return { line, goldType, kind, result, index };
+    });
+  }
+
+  /**
+   * Run the §5.1 calculation without writing anything — backs the live
+   * preview on the Valuer's form.
+   */
+  async preview(dto: PreviewBuybackDto) {
+    const context = await this.pricingContext.load();
+    const priced = await this.priceLines(dto.source, this.toLines(dto), context);
+
+    const total = priced.reduce((sum, p) => sum.plus(p.result.payableAmount), dec(0));
+    const first = priced[0]!;
 
     return {
       snapshotId: context.snapshot.id,
-      goldTypeCode: goldType.code,
-      kind,
-      shopBuybackPrice: result.shopBuybackPrice.toFixed(),
-      deduction: result.deduction.toFixed(),
-      payableAmount: result.payableAmount.toFixed(),
-      branch: result.branch,
+      // ຊ່ອງເກົ່າ = ແຖວທຳອິດ / ຍອດລວມ, ເພື່ອໃຫ້ໜ້າຈໍເກົ່າຍັງອ່ານໄດ້.
+      goldTypeCode: first.goldType.code,
+      kind: first.kind,
+      shopBuybackPrice: first.result.shopBuybackPrice.toFixed(),
+      deduction: first.result.deduction.toFixed(),
+      payableAmount: total.toFixed(),
+      branch: first.result.branch,
+      totalWeightG: priced
+        .reduce((sum, p) => sum.plus(dec(p.line.weightG).mul(p.line.quantity)), dec(0))
+        .toFixed(),
+      totalQuantity: priced.reduce((sum, p) => sum + p.line.quantity, 0),
+      lines: priced.map((p) => ({
+        goldTypeId: p.line.goldTypeId,
+        goldTypeNameLo: p.goldType.nameLo,
+        goldItemId: p.line.goldItemId ?? null,
+        weightG: p.line.weightG,
+        quantity: p.line.quantity,
+        goldPercent: p.line.goldPercent ?? null,
+        shopBuybackPrice: p.result.shopBuybackPrice.toFixed(),
+        deduction: p.result.deduction.toFixed(),
+        payableAmount: p.result.payableAmount.toFixed(),
+        branch: p.result.branch,
+      })),
     };
   }
 
@@ -112,35 +185,31 @@ export class BuybackService {
    * than trusting what the browser previewed.
    */
   async create(dto: CreateBuybackDto, user: AuthenticatedUser, shiftId: string) {
-    const goldType = await this.prisma.goldType.findFirst({
-      where: { id: dto.goldTypeId, deletedAt: null },
-    });
-    if (!goldType) throw new NotFoundException('ບໍ່ພົບປະເພດຄຳ');
-
     const context = await this.pricingContext.load();
-    const kind = dto.source === 'OTHER_SHOP' ? 'BOILED' : this.kindFor(goldType.code);
+    const priced = await this.priceLines(dto.source, this.toLines(dto), context);
 
-    if (kind === 'BOILED' && !dto.goldPercent) {
-      throw new BadRequestException('ຄຳຕົ້ມຕ້ອງປ້ອນ %ຄຳ');
+    for (const p of priced) {
+      if (p.result.payableAmount.lte(0)) {
+        throw new BadRequestException(
+          `ຄິດໄລ່ລາຄາບໍ່ໄດ້ ແຖວທີ ${p.index + 1} (${p.result.branch}) — ກະລຸນາກວດສອບນ້ຳໜັກ ແລະ ປະເພດຄຳ`,
+        );
+      }
     }
 
-    const result = calculateBuyback(
-      {
-        kind,
-        weightG: dto.weightG,
-        quantity: dto.quantity,
-        goldPercent: dto.goldPercent,
-        deduction: dto.deduction,
-      },
-      context.source,
-      context.table,
+    // ຫົວບິນເກັບຍອດລວມ ເພື່ອໃຫ້ການຈ່າຍເງິນ, ປະຫວັດ ແລະ ລາຍງານ ອ່ານບ່ອນດຽວ.
+    const totalPayable = priced.reduce((sum, p) => sum.plus(p.result.payableAmount), dec(0));
+    const totalWeightG = priced.reduce(
+      (sum, p) => sum.plus(dec(p.line.weightG).mul(p.line.quantity)),
+      dec(0),
     );
-
-    if (result.payableAmount.lte(0)) {
-      throw new BadRequestException(
-        `ຄິດໄລ່ລາຄາບໍ່ໄດ້ (${result.branch}) — ກະລຸນາກວດສອບນ້ຳໜັກ ແລະ ປະເພດຄຳ`,
-      );
-    }
+    const totalQuantity = priced.reduce((sum, p) => sum + p.line.quantity, 0);
+    const head = priced[0]!;
+    const result = {
+      payableAmount: totalPayable,
+      branch: head.result.branch,
+      shopBuybackPrice: head.result.shopBuybackPrice,
+      deduction: head.result.deduction,
+    };
 
     // ວິທີຈ່າຍ ສົດ / ໂອນ ແຍກກັນ — a ໂອນ leg has to name a real, open account
     // before anything is written, because confirm books it against that
@@ -163,16 +232,34 @@ export class BuybackService {
           customerId: customer.id,
           snapshotId: context.snapshot.id,
           source: dto.source,
-          goldTypeId: dto.goldTypeId,
-          goldItemId: dto.goldItemId ?? null,
-          weightG: new Prisma.Decimal(dec(dto.weightG).toFixed()),
-          quantity: dto.quantity,
-          goldPercent: dto.goldPercent
-            ? new Prisma.Decimal(dec(dto.goldPercent).toFixed())
+          // ຊ່ອງຫົວບິນ = ແຖວທຳອິດ / ຍອດລວມ ເພື່ອບໍ່ໃຫ້ລາຍງານເກົ່າພັງ;
+          // ຄວາມຈິງຕໍ່ລາຍການຢູ່ໃນ `lines`.
+          goldTypeId: head.line.goldTypeId,
+          goldItemId: head.line.goldItemId ?? null,
+          weightG: D(totalWeightG),
+          quantity: totalQuantity,
+          goldPercent: head.line.goldPercent
+            ? new Prisma.Decimal(dec(head.line.goldPercent).toFixed())
             : null,
           shopBuybackPrice: D(result.shopBuybackPrice),
           deduction: D(result.deduction),
           payableAmount: D(result.payableAmount),
+          lines: {
+            create: priced.map((p) => ({
+              goldTypeId: p.line.goldTypeId,
+              goldItemId: p.line.goldItemId ?? null,
+              weightG: new Prisma.Decimal(dec(p.line.weightG).toFixed()),
+              quantity: p.line.quantity,
+              goldPercent: p.line.goldPercent
+                ? new Prisma.Decimal(dec(p.line.goldPercent).toFixed())
+                : null,
+              shopBuybackPrice: D(p.result.shopBuybackPrice),
+              deduction: D(p.result.deduction),
+              payableAmount: D(p.result.payableAmount),
+              branch: p.result.branch,
+              sortOrder: p.index,
+            })),
+          },
           // TOR §5.1 History carries ຍອດເງິນຄ້າງຈ່າຍ, so a partly-paid
           // buyback is visible rather than looking settled.
           paidAmount: D(payments.totalLak.minus(payments.changeLak)),
@@ -193,7 +280,12 @@ export class BuybackService {
             })),
           },
         },
-        include: { payments: true, customer: true, goldType: true },
+        include: {
+          payments: true,
+          customer: true,
+          goldType: true,
+          lines: { include: { goldType: true, goldItem: true }, orderBy: { sortOrder: 'asc' } },
+        },
       });
 
       await this.audit.record(
@@ -292,7 +384,11 @@ export class BuybackService {
   async confirm(id: string, user: AuthenticatedUser) {
     const buyback = await this.prisma.buyback.findFirst({
       where: { id, deletedAt: null },
-      include: { payments: true, goldType: true },
+      include: {
+        payments: true,
+        goldType: true,
+        lines: { orderBy: { sortOrder: 'asc' } },
+      },
     });
     if (!buyback) throw new NotFoundException('ບໍ່ພົບລາຍການ Buyback');
 
@@ -346,18 +442,39 @@ export class BuybackService {
         }
       }
 
-      // 2. The gold lands in Stock (OLD) under its ປະເພດຄຳ, at what was paid
-      //    for it — so WAC reflects the real acquisition cost immediately.
-      const goldG = dec(buyback.weightG.toFixed()).mul(buyback.quantity);
-      await this.stockLedger.postOld(tx, {
-        goldTypeId: buyback.goldTypeId,
-        businessDayId: day.id,
-        goldInG: goldG,
-        priceIn: dec(buyback.payableAmount.toFixed()),
-        partnerLabel: 'Cashier',
-        typeLabel: `Buyback ${buyback.code}`,
-        createdById: user.id,
-      });
+      /*
+       * 2. ຄຳເຂົ້າ Stock (OLD) ຕາມ ປະເພດຄຳ ຂອງແຕ່ລະແຖວ ດ້ວຍລາຄາຂອງແຖວນັ້ນ.
+       *
+       * ບິນດຽວມີຫຼາຍປະເພດຄຳໄດ້ ສະນັ້ນຈຶ່ງລົງເປັນແຖວ — ຖ້າລົງກ້ອນດຽວຕາມ
+       * ປະເພດຂອງຫົວບິນ ສາງຂອງປະເພດອື່ນຈະຂາດ ແລະ WAC ຈະຜິດ.
+       */
+      const postings = buyback.lines.length
+        ? buyback.lines.map((line) => ({
+            goldTypeId: line.goldTypeId,
+            goldG: dec(line.weightG.toFixed()).mul(line.quantity),
+            priceIn: dec(line.payableAmount.toFixed()),
+          }))
+        : [
+            {
+              goldTypeId: buyback.goldTypeId,
+              goldG: dec(buyback.weightG.toFixed()).mul(buyback.quantity),
+              priceIn: dec(buyback.payableAmount.toFixed()),
+            },
+          ];
+
+      for (const posting of postings) {
+        await this.stockLedger.postOld(tx, {
+          goldTypeId: posting.goldTypeId,
+          businessDayId: day.id,
+          goldInG: posting.goldG,
+          priceIn: posting.priceIn,
+          partnerLabel: 'Cashier',
+          typeLabel: `Buyback ${buyback.code}`,
+          createdById: user.id,
+        });
+      }
+
+      const goldG = postings.reduce((sum, p) => sum.plus(p.goldG), dec(0));
 
       const updated = await tx.buyback.update({
         where: { id },
@@ -398,6 +515,11 @@ export class BuybackService {
           // ແຖວໂອນ ຕ້ອງບອກໄດ້ວ່າ ເງິນອອກຈາກບັນຊີໃດ — ບໍ່ດັ່ງນັ້ນ ປະຫວັດຈະ
           // ແຍກ ສົດ/ໂອນ ບໍ່ອອກ.
           payments: { include: { bankAccount: { select: { nameLo: true } } } },
+          // ລາຍການຄຳໃນບິນ — View ຕ້ອງເຫັນຄົບທຸກແຖວ.
+          lines: {
+            include: { goldType: { select: { nameLo: true } }, goldItem: { select: { nameLo: true } } },
+            orderBy: { sortOrder: 'asc' },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: range.skip,

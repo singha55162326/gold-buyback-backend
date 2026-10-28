@@ -255,8 +255,8 @@ export class LedgerService {
    * ບໍ່ແມ່ນຊ່ວງ. ເງິນສົດ / ທະນາຄານ / AP-AR ອ່ານຕາມມື້ການຄ້ານັ້ນ, ສ່ວນ ຄຳ ແລະ
    * Advance ເປັນຍອດສະສົມ ຈຶ່ງອ່ານເຖິງວັນທີນັ້ນ.
    *
-   * ວັນທີທີ່ບໍ່ເຄີຍເປີດເປັນມື້ການຄ້າ ຈະໄດ້ຍອດເງິນສົດ/ທະນາຄານ = 0 ເຊິ່ງຖືກຕ້ອງ:
-   * ມື້ນັ້ນບໍ່ມີການເຄື່ອນໄຫວ.
+   * ວັນທີທີ່ບໍ່ເຄີຍເປີດເປັນມື້ການຄ້າ ຍັງອ່ານໄດ້: ມື້ນັ້ນບໍ່ມີການເຄື່ອນໄຫວ
+   * ແຕ່ຍອດເງິນສົດ/ທະນາຄານ ຍັງເປັນຍອດຍົກມາ ບໍ່ແມ່ນ 0.
    */
   async coh(asOfDate?: string) {
     const day = asOfDate
@@ -266,8 +266,8 @@ export class LedgerService {
 
     const [cashBalances, bankBalances, apAr, goldSummary, wacPosition, advanceNet] =
       await Promise.all([
-        this.cash.cashBalances(day?.id ?? '—'),
-        this.cash.bankBalances(day?.id ?? '—'),
+        this.cash.cashBalances(asOf),
+        this.cash.bankBalances(asOf),
         // ມື້ທີ່ບໍ່ເຄີຍເປີດ: ສົ່ງ id ທີ່ບໍ່ກົງກັບແຖວໃດ ແລ້ວໄດ້ຍອດ 0 ຜ່ານເສັ້ນທາງດຽວກັນ.
         this.cashApAr(day ?? { id: '—', date: asOf! }),
         this.goldApArSummary(),

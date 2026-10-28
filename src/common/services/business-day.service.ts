@@ -14,11 +14,29 @@ export class BusinessDayService {
 
   /** Midnight of the given instant, in the server's local timezone. */
   static toDateOnly(at: Date = new Date()): Date {
-    // Local time on purpose: a business day is the shop's day, and the shop
-    // is in Vientiane. That makes the server's TZ a financial setting — on a
-    // UTC host the day would roll at 07:00 Lao time, mid-morning, splitting a
-    // single trading day across two BusinessDay rows. `assertShopTimezone`
-    // below is what stops that shipping unnoticed.
+    /*
+     * ວັນທີຂອງມື້ການຄ້າ = ວັນທີຕາມປະຕິທິນຂອງຮ້ານ (ເວລາທ້ອງຖິ່ນ), ເກັບເປັນ
+     * ທ່ຽງຄືນ UTC ຂອງວັນທີນັ້ນ.
+     *
+     * ເອົາ ປີ/ເດືອນ/ວັນ ຈາກເວລາທ້ອງຖິ່ນ ເພາະມື້ການຄ້າຄືມື້ຂອງຮ້ານທີ່ວຽງຈັນ —
+     * ຖ້າໃຊ້ UTC ມື້ຈະປ່ຽນຕອນ 07:00 ເຊົ້າ ເຊິ່ງຜ່າກາງມື້ຄ້າຂາຍ.
+     *
+     * ແຕ່ຕ້ອງປະກອບກັບຄືນເປັນ UTC: ຖັນນີ້ເປັນ `@db.Date` ແລະ Postgres ຕັດ
+     * ເອົາສ່ວນວັນທີຕາມ UTC. ຖ້າສົ່ງທ່ຽງຄືນທ້ອງຖິ່ນ (+07) ໄປ ມັນຈະກາຍເປັນ
+     * 17:00 ຂອງມື້ວານ ແລ້ວຖືກເກັບເປັນ "ມື້ວານ" — ປ້າຍວັນທີຜິດໄປ 1 ມື້ ແລະ
+     * ການກອງຊ່ວງວັນທີ (ທີ່ສ້າງຂອບເປັນທ່ຽງຄືນ UTC) ຈະຫາແຖວບໍ່ພົບ.
+     */
+    return new Date(Date.UTC(at.getFullYear(), at.getMonth(), at.getDate()));
+  }
+
+  /**
+   * ທ່ຽງຄືນ *ທ້ອງຖິ່ນ* ຂອງວັນທີນັ້ນ.
+   *
+   * ໃຊ້ເປັນຂອບຂອງຊ່ວງເວລາ ເມື່ອກອງຖັນ timestamp (`createdAt`): ການຄ້າຕອນ
+   * ຕີ 2 ຂອງມື້ນີ້ ຕ້ອງນັບເປັນມື້ນີ້ ບໍ່ແມ່ນຕົກຂອບ. ຕ່າງຈາກ `toDateOnly`
+   * ທີ່ເປັນ "ປ້າຍວັນທີ" ສຳລັບຖັນ `@db.Date`.
+   */
+  static localMidnight(at: Date = new Date()): Date {
     return new Date(at.getFullYear(), at.getMonth(), at.getDate());
   }
 

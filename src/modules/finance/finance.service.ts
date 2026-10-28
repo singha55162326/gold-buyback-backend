@@ -224,7 +224,17 @@ export class FinanceService {
       }),
       this.prisma.incomeExpenseTransaction.count({ where }),
     ]);
-    return this.range.page(rows, total, range);
+    // ຜູ້ລົງລາຍການ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການບັນທຶກ.
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(rows.map((r) => r.createdById))] } },
+      select: { id: true, fullName: true },
+    });
+    const nameById = new Map(users.map((u) => [u.id, u.fullName]));
+    return this.range.page(
+      rows.map((r) => ({ ...r, createdBy: nameById.get(r.createdById) ?? '—' })),
+      total,
+      range,
+    );
   }
 
   /* ---------------------------------------------------------------- *
@@ -321,10 +331,20 @@ export class FinanceService {
     user?: AuthenticatedUser,
   ) {
     const range = this.range.resolve(query, user);
+    /*
+     * ຄຳທີ່ຍັງຝາກຢູ່ ຕ້ອງຄ້າງຢູ່ໜ້າຈໍຈົນກວ່າຈະສົ່ງຄືນ.
+     *
+     * ຖ້າກອງຕາມວັນທີສ້າງຢ່າງດຽວ ລາຍການທີ່ຮັບຝາກມື້ວານຈະຫາຍໄປຈາກໜ້າຈໍພໍ
+     * ຂຶ້ນມື້ໃໝ່ ທັງທີ່ຄຳຍັງຢູ່ໃນຮ້ານ — ພະນັກງານຈຶ່ງບໍ່ຮູ້ວ່າຍັງຖືຂອງໃຜຢູ່.
+     * ສະນັ້ນ: ລາຍການໃນຊ່ວງວັນທີ ບວກກັບ ລາຍການທີ່ຍັງ HELD ທັງໝົດ.
+     */
+    const inRange = { createdAt: HistoryRangeService.window(range) };
+    const stillHeld = { status: 'HELD' as const };
     const where = {
       deletedAt: null,
-      createdAt: HistoryRangeService.window(range),
-      ...(status ? { status } : {}),
+      ...(status
+        ? { status, ...(status === 'HELD' ? {} : inRange) }
+        : { OR: [inRange, stillHeld] }),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.consignment.findMany({

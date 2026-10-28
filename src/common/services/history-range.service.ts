@@ -63,7 +63,9 @@ export class HistoryRangeService {
   }
 
   resolve(query: HistoryRangeDto, user?: AuthenticatedUser): ResolvedRange {
-    const today = BusinessDayService.toDateOnly();
+    // ຂອບຂອງຊ່ວງເປັນທ່ຽງຄືນທ້ອງຖິ່ນ (ຄືກັນກັບ `parse` ຂ້າງເທິງ); ຖັນວັນທີ
+    // ລ້ວນຖືກປະກອບຄືນເປັນ UTC ຢູ່ `dayWindow`.
+    const today = BusinessDayService.localMidnight();
 
     const rawFrom = query.from_date ?? query.fromDate;
     const rawTo = query.to_date ?? query.toDate;
