@@ -1433,6 +1433,11 @@ model GoldHandover {
   glassWeightG  Decimal?       @db.Decimal(18, 4)
   /// ຂາດດຸ = ນ້ຳໜັກອອກ − (ເນື້ອລ້ວນ + ມີແກ້ວ) — ຄຳນວນຢູ່ server.
   shortfallG    Decimal?       @db.Decimal(18, 4)
+  /// ຕົ້ນທຶນເຂົ້າສາງ (ກີບ) — ຖ່າຍໄວ້ຕອນມອບ ບໍ່ແມ່ນຄິດຄືນຕອນອ່ານ:
+  /// ຄຳດີ/ຫຍຸບ/ແທ່ງ = ນ້ຳໜັກອອກ × ສະເລ່ຍ/g ຂອງປະເພດນັ້ນໃນມື້,
+  /// ຄຳຕົ້ມ = ລວມລາຄາທີ່ຈ່າຍຂອງລາຍການທີ່ເລືອກ. ສະເລ່ຍປ່ຽນໄດ້ທຸກບິນ ສະນັ້ນ
+  /// ຖ້າຄິດຄືນຕອນອ່ານ ໃບມອບທີ່ພິມໄປແລ້ວຈະບໍ່ກົງກັບໜ້າຈໍ.
+  warehouseCost Decimal?       @db.Decimal(18, 4)
   note          String?
   status        ApprovalStatus @default(PENDING)
   createdById   String
@@ -1448,8 +1453,9 @@ model GoldHandover {
   goldType    GoldType           @relation(fields: [goldTypeId], references: [id])
   items       GoldHandoverItem[]
 
-  /// ຮອບຊ້ຳກັນໃນມື້ດຽວບໍ່ໄດ້ — ສອງຄົນກົດພ້ອມກັນຈະລົ້ມແຖວໜຶ່ງ ບໍ່ແມ່ນອອກຮອບຊ້ຳ.
-  @@unique([businessDayId, roundNo])
+  /// ຮອບດຽວມອບໄດ້ຫຼາຍປະເພດຄຳ (ຄຳດີ + ຄຳຫຍຸບ + ແທ່ງ) ແຕ່ປະເພດດຽວກັນ
+  /// ຊ້ຳໃນຮອບດຽວບໍ່ໄດ້ — ສອງຄົນກົດພ້ອມກັນຈະລົ້ມແຖວໜຶ່ງ ບໍ່ແມ່ນອອກຮອບຊ້ຳ.
+  @@unique([businessDayId, roundNo, goldTypeId])
   @@index([status])
   @@index([createdAt])
   @@map("gold_handovers")

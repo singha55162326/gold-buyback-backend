@@ -13,6 +13,7 @@ import type { ApprovalStatus, StockScope } from '@prisma/client';
 import { StockService } from './stock.service';
 import {
   CreateHandoverDto,
+  HandoverQueryDto,
   CreateStockInDto,
   CreateStockOutDto,
   CreateTransferDto,
@@ -137,12 +138,11 @@ export class StockController {
 
   // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ສິດກວ້າງວັນທີບັງຄັບຢູ່ HistoryRangeService ບໍ່ແມ່ນ FE.
   @Get('handovers')
-  listHandovers(
-    @Query() query: HistoryRangeDto,
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('status') status?: ApprovalStatus,
-  ) {
-    return this.stock.listHandovers(status, query, user);
+  listHandovers(@Query() query: HandoverQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.stock.listHandovers(query.status as ApprovalStatus | undefined, query, user, {
+      goldTypeId: query.goldTypeId,
+      q: query.q,
+    });
   }
 
   /** ລາຍການຄຳເກົ່າ (ຄຳຕົ້ມ) ທີ່ຍັງບໍ່ໄດ້ມອບ — ໃຫ້ຟອມເລືອກເປັນແຖວ. */

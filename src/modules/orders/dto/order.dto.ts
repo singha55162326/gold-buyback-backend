@@ -12,6 +12,7 @@ import {
   IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
 
 export class OrderReceiptDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
@@ -39,12 +40,38 @@ export class OrderLineDto {
   @IsOptional() @IsString() note?: string;
 }
 
+/**
+ * ຕົວກອງຂອງລາຍການປະຫວັດ.
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`:
+ * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
+ * `@Query('...')` ກໍຕາມ.
+ */
+export class ListOrderDto extends HistoryRangeDto {
+  @IsOptional()
+  @IsIn([
+    'ORDER_PLACED',
+    'SENT_TO_SMITH',
+    'RECEIVED_FROM_SMITH',
+    'AWAITING_PICKUP',
+    'COMPLETED',
+    'CANCELLED',
+  ])
+  status?:
+    | 'ORDER_PLACED'
+    | 'SENT_TO_SMITH'
+    | 'RECEIVED_FROM_SMITH'
+    | 'AWAITING_PICKUP'
+    | 'COMPLETED'
+    | 'CANCELLED';
+}
+
 export class CreateOrderDto {
   @Matches(/^\d{8}$/, { message: 'ເບີໂທຕ້ອງເປັນຕົວເລກ 8 ໂຕ' })
   phone: string;
 
   /** ເລກບິນ 4 ຕົວຫຼັກ (TOR §7). */
-  @Matches(/^\d{4}$/, { message: 'ເລກບິນຕ້ອງເປັນຕົວເລກ 4 ຕົວ' })
+  @Matches(/^\d{6}$/, { message: 'ເລກບິນຕ້ອງເປັນຕົວເລກ 6 ຕົວ' })
   billNo: string;
 
   @IsIn(['IT', 'ITP'], { message: 'ປະເພດສິນຄ້າຕ້ອງເປັນ IT ຫຼື ITP' })

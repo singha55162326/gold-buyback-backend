@@ -1,12 +1,16 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import type { ApprovalStatus } from '@prisma/client';
 import { ExchangeService } from './exchange.service';
-import { CreateExchangeDto, PreviewExchangeDto, ReviewExchangeDto } from './dto/exchange.dto';
+import {
+  CreateExchangeDto,
+  ListExchangeDto,
+  PreviewExchangeDto,
+  ReviewExchangeDto,
+} from './dto/exchange.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequiresOpenShift } from '../../common/decorators/requires-shift.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
 @ApiTags('exchange')
 @ApiBearerAuth('bearer')
@@ -15,12 +19,8 @@ export class ExchangeController {
   constructor(private readonly exchange: ExchangeService) {}
 
   @Get()
-  list(
-    @Query() query: HistoryRangeDto,
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('status') status?: ApprovalStatus,
-  ) {
-    return this.exchange.list(status, query, user);
+  list(@Query() query: ListExchangeDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.exchange.list(query.status as ApprovalStatus | undefined, query, user);
   }
 
   /**

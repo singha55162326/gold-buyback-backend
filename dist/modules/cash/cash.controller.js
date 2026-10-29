@@ -72,8 +72,8 @@ let CashController = class CashController {
     bankBalances(sources) {
         return this.cash.bankBalances(undefined, COUNTER_SOURCES[sources ?? '']);
     }
-    bankHistory(query, user, sources) {
-        return this.cash.bankHistory(query, user, COUNTER_SOURCES[sources ?? '']);
+    bankHistory(query, user) {
+        return this.cash.bankHistory(query, user, COUNTER_SOURCES[query.sources ?? '']);
     }
     createBankTransaction(dto, user) {
         return this.cash.createBankTransaction(dto, user);
@@ -172,14 +172,12 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CashController.prototype, "bankBalances", null);
 __decorate([
-    openapi.ApiQuery({ name: "sources", required: false }),
     (0, common_1.Get)('bank/history'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
-    __param(2, (0, common_1.Query)('sources')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
+    __metadata("design:paramtypes", [cash_dto_1.BankHistoryDto, Object]),
     __metadata("design:returntype", void 0)
 ], CashController.prototype, "bankHistory", null);
 __decorate([

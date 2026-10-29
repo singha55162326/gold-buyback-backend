@@ -732,12 +732,37 @@ export class StockService {
    *  ຕໍ່ຄັ້ງ ແລະ ບໍ່ໄລ່ເປັນຮອບ (ຕາມທີ່ລູກຄ້າແຈ້ງ).
    */
   async createHandover(dto: CreateHandoverDto, user: AuthenticatedUser, shiftId: string) {
+    // ຮອບດຽວມອບ ຄຳດີ + ຄຳຫຍຸບ + ແທ່ງ ພ້ອມກັນໄດ້ (TOR §4.2 ຕາມແບບທີ່ລູກຄ້າໃຫ້).
+    if (dto.lines?.length) return this.createHandoverRound(dto, user, shiftId);
+
+    if (!dto.goldTypeId) throw new BadRequestException('ຕ້ອງເລືອກປະເພດຄຳ');
     const goldType = await this.prisma.goldType.findFirst({
       where: { id: dto.goldTypeId, deletedAt: null },
     });
     if (!goldType) throw new NotFoundException('ບໍ່ພົບປະເພດຄຳທີ່ເລືອກ');
 
-    const isBoiled = goldType.code === 'BOILED';
+    /*
+     * ຮູບແບບເກົ່າ (ປະເພດດຽວ, ນ້ຳໜັກຢູ່ລະດັບເທິງ) ຖືກແປງເປັນຮອບທີ່ມີແຖວດຽວ —
+     * ກົດການກວດ ແລະ ການຄິດຕົ້ນທຶນຈຶ່ງມີຊຸດດຽວ ບໍ່ແມ່ນສອງຊຸດທີ່ຂັດກັນ.
+     */
+    if (goldType.code !== 'BOILED') {
+      return this.createHandoverRound(
+        {
+          ...dto,
+          lines: [
+            {
+              goldTypeId: goldType.id,
+              outWeightG: dto.grossWeightG ?? dto.weightG ?? '0',
+              pureWeightG: dto.pureWeightG,
+              glassWeightG: dto.glassWeightG,
+            },
+          ],
+        },
+        user,
+        shiftId,
+      );
+    }
+
     const day = await this.businessDay.current();
 
     // ── ຄຳຕົ້ມ: ນ້ຳໜັກມາຈາກລາຍການທີ່ເລືອກ, ບໍ່ແມ່ນຈາກຊ່ອງປ້ອນ
@@ -749,12 +774,8 @@ export class StockService {
       payableAmount: Prisma.Decimal;
     }> = [];
     let weightG: Decimal;
-    let gross: Decimal | null = null;
-    let pure: Decimal | null = null;
-    let glass: Decimal | null = null;
-    let shortfall: Decimal | null = null;
 
-    if (isBoiled) {
+    {
       const ids = [...new Set(dto.buybackIds ?? [])];
       if (ids.length === 0) {
         throw new BadRequestException('ຄຳຕົ້ມ ຕ້ອງເລືອກລາຍການຄຳເກົ່າທີ່ຮັບຊື້ຄືນ');
@@ -786,76 +807,202 @@ export class StockService {
         goldPercent: r.goldPercent,
         payableAmount: r.payableAmount,
       }));
-      weightG = rows.reduce((sum, r) => sum.plus(toDec(r.weightG).mul(r.quantity)), dec(0));
-    } else {
-      // ── ຄຳດີ / ຄຳຫຍຸບ / ແທ່ງ
-      gross = dec(dto.grossWeightG ?? dto.weightG ?? 0);
-      if (!gross.isFinite() || gross.lte(0)) {
-        throw new BadRequestException('ນ້ຳໜັກອອກຕ້ອງໃຫຍ່ກວ່າ 0');
-      }
-
-      pure = dec(dto.pureWeightG ?? 0);
-      glass = dec(dto.glassWeightG ?? 0);
-      if (!pure.isFinite() || pure.isNegative() || !glass.isFinite() || glass.isNegative()) {
-        throw new BadRequestException('ເນື້ອລ້ວນ ແລະ ມີແກ້ວ ຕ້ອງບໍ່ຕິດລົບ');
-      }
-
-      // ເນື້ອລ້ວນ + ມີແກ້ວ ແຍກອອກມາຈາກນ້ຳໜັກອອກ ສະນັ້ນລວມກັນເກີນບໍ່ໄດ້ —
-      // ຖ້າເກີນ ແປວ່າຊັ່ງຜິດ ຫຼື ພິມຜິດ, ແລະ ຂາດດຸ ຈະອອກມາຕິດລົບ.
-      if (pure.plus(glass).gt(gross)) {
-        throw new BadRequestException(
-          `ເນື້ອລ້ວນ + ມີແກ້ວ (${pure.plus(glass).toFixed()} g) ຕ້ອງບໍ່ເກີນ ນ້ຳໜັກອອກ (${gross.toFixed()} g)`,
-        );
-      }
-
-      shortfall = gross.minus(pure).minus(glass);
-      weightG = gross;
+      /*
+       * `Buyback.weightG` ເປັນ "ຍອດລວມຂອງບິນ" ຢູ່ແລ້ວ (Σ ນ້ຳໜັກ × ຈຳນວນ
+       * ຂອງທຸກແຖວ) ຕັ້ງແຕ່ບິນດຽວມີຫຼາຍແຖວໄດ້ — ຄູນດ້ວຍ `quantity` ຂອງຫົວບິນ
+       * ອີກເທື່ອ ຈະນັບສອງເທື່ອ.
+       */
+      weightG = rows.reduce((sum, r) => sum.plus(toDec(r.weightG)), dec(0));
     }
 
-    const handover = await this.prisma.$transaction(async (tx) => {
-      // ຮອບທີ — ໄລ່ຕໍ່ມື້ການຄ້າ; unique index ກັນສອງຄົນໄດ້ຮອບດຽວກັນ.
-      let roundNo: number | null = null;
-      if (!isBoiled) {
-        const last = await tx.goldHandover.aggregate({
-          where: { businessDayId: day.id, roundNo: { not: null } },
-          _max: { roundNo: true },
-        });
-        roundNo = (last._max.roundNo ?? 0) + 1;
-      }
+    // ຕົ້ນທຶນເຂົ້າສາງ ຂອງ ຄຳຕົ້ມ = ລາຄາທີ່ຈ່າຍຂອງລາຍການທີ່ເລືອກ (ບໍ່ແມ່ນສະເລ່ຍ).
+    const warehouseCost = items.reduce((sum, i) => sum.plus(toDec(i.payableAmount)), dec(0));
 
-      return tx.goldHandover.create({
+    const handover = await this.prisma.$transaction(async (tx) =>
+      // ຄຳຕົ້ມ ບໍ່ໄລ່ເປັນຮອບ => roundNo ປະໄວ້ null.
+      tx.goldHandover.create({
         data: {
           code: await this.nextCode(tx, 'HO'),
           shiftId,
           businessDayId: day.id,
-          goldTypeId: dto.goldTypeId,
-          roundNo,
+          goldTypeId: goldType.id,
+          roundNo: null,
           weightG: D(weightG),
-          grossWeightG: gross ? D(gross) : null,
-          pureWeightG: pure ? D(pure) : null,
-          glassWeightG: glass ? D(glass) : null,
-          shortfallG: shortfall ? D(shortfall) : null,
+          warehouseCost: D(warehouseCost),
           note: dto.note ?? null,
           status: 'PENDING',
           createdById: user.id,
-          ...(items.length > 0 ? { items: { create: items } } : {}),
+          items: { create: items },
         },
         include: { items: true, goldType: true },
-      });
-    });
+      }),
+    );
 
     await this.notifications.notify({
       kind: 'GOLD_HANDOVER',
       recipientRole: 'WAREHOUSE',
       title: 'ມີການມອບຄຳລະຫວ່າງມື້',
-      body: handover.roundNo
-        ? `${handover.code} — ຮອບທີ ${handover.roundNo} — ${weightG.toFixed()} g`
-        : `${handover.code} — ${goldType.nameLo} ${items.length} ລາຍການ — ${weightG.toFixed()} g`,
+      body: `${handover.code} — ${goldType.nameLo} ${items.length} ລາຍການ — ${weightG.toFixed()} g`,
       refType: 'GoldHandover',
       refId: handover.id,
     });
 
     return handover;
+  }
+
+  /**
+   * ສະເລ່ຍ ກີບ/g ທີ່ຮັບມາຈາກຜູ້ປະເມີນໃນມື້ການຄ້ານີ້ ແຍກຕາມປະເພດຄຳ.
+   *
+   * ອ່ານຈາກ `buyback_lines` ບ່ອນດຽວ ຄືກັນກັບຕາຕະລາງສະຫຼຸບ ສະນັ້ນ ຕົ້ນທຶນ
+   * ເຂົ້າສາງ ກັບ ສະເລ່ຍ/g ທີ່ສະແດງຢູ່ໜ້າຈໍ ຈຶ່ງມາຈາກຕົວເລກຊຸດດຽວກັນ.
+   */
+  private async receivedAverageByType(): Promise<Map<string, Decimal>> {
+    const from = BusinessDayService.localMidnight();
+    const to = new Date(from);
+    to.setDate(to.getDate() + 1);
+
+    const lines = await this.prisma.buybackLine.findMany({
+      where: {
+        buyback: { deletedAt: null, status: 'COMPLETED', createdAt: { gte: from, lt: to } },
+      },
+      select: { goldTypeId: true, weightG: true, quantity: true, payableAmount: true },
+    });
+
+    const weight = new Map<string, Decimal>();
+    const paid = new Map<string, Decimal>();
+    for (const line of lines) {
+      const w = toDec(line.weightG).mul(line.quantity);
+      weight.set(line.goldTypeId, (weight.get(line.goldTypeId) ?? dec(0)).plus(w));
+      paid.set(line.goldTypeId, (paid.get(line.goldTypeId) ?? dec(0)).plus(toDec(line.payableAmount)));
+    }
+
+    const average = new Map<string, Decimal>();
+    for (const [goldTypeId, w] of weight) {
+      if (w.gt(0)) average.set(goldTypeId, (paid.get(goldTypeId) ?? dec(0)).div(w));
+    }
+    return average;
+  }
+
+  /** ຕົ້ນທຶນເຂົ້າສາງ ຂອງນ້ຳໜັກກ້ອນໜຶ່ງ. ຍັງບໍ່ມີການຮັບຊື້ໃນມື້ => null. */
+  private async warehouseCostFor(goldTypeId: string, weightG: Decimal): Promise<Decimal | null> {
+    const average = (await this.receivedAverageByType()).get(goldTypeId);
+    return average ? weightG.mul(average) : null;
+  }
+
+  /**
+   * ມອບຄຳເປັນ "ຮອບ" — ຮອບດຽວມີໄດ້ຫຼາຍປະເພດຄຳ.
+   *
+   * ເກັບເປັນແຖວລະປະເພດຄຳ ແຕ່ແບ່ງ ຮອບທີ ອັນດຽວກັນ: ສາງຮັບ/ປະຕິເສດເປັນລາຍ
+   * ປະເພດໄດ້ ແລະ ການລົງສາງກໍຍັງແຍກຕາມປະເພດຄຳຄືເກົ່າ, ແຕ່ໃບພິມ ແລະ ຕາຕະລາງ
+   * ຍັງອ່ານເປັນຮອບດຽວ ຕາມແບບທີ່ລູກຄ້າໃຫ້ມາ.
+   */
+  private async createHandoverRound(
+    dto: CreateHandoverDto,
+    user: AuthenticatedUser,
+    shiftId: string,
+  ) {
+    const lines = dto.lines ?? [];
+    const ids = lines.map((l) => l.goldTypeId);
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('ປະເພດຄຳຊ້ຳກັນໃນຮອບດຽວບໍ່ໄດ້');
+    }
+
+    const goldTypes = await this.prisma.goldType.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+    });
+    if (goldTypes.length !== new Set(ids).size) {
+      throw new NotFoundException('ບໍ່ພົບປະເພດຄຳທີ່ເລືອກ');
+    }
+    const byId = new Map(goldTypes.map((t) => [t.id, t]));
+
+    const average = await this.receivedAverageByType();
+    const prepared = lines.map((line) => {
+      const goldType = byId.get(line.goldTypeId)!;
+      if (goldType.code === 'BOILED') {
+        throw new BadRequestException('ຄຳຕົ້ມ ມອບເປັນລາຍການ ບໍ່ແມ່ນເປັນຮອບ');
+      }
+
+      const out = dec(line.outWeightG);
+      if (!out.isFinite() || out.lte(0)) {
+        throw new BadRequestException(`${goldType.nameLo}: ນ້ຳໜັກລວມອອກຕ້ອງໃຫຍ່ກວ່າ 0`);
+      }
+
+      const pure = dec(line.pureWeightG ?? 0);
+      const glass = dec(line.glassWeightG ?? 0);
+      if (!pure.isFinite() || pure.isNegative() || !glass.isFinite() || glass.isNegative()) {
+        throw new BadRequestException(`${goldType.nameLo}: ເນື້ອລ້ວນ ແລະ ມີແກ້ວ ຕ້ອງບໍ່ຕິດລົບ`);
+      }
+
+      /*
+       * ເນື້ອລ້ວນ + ມີແກ້ວ ຕ້ອງບໍ່ນ້ອຍກວ່າ ນ້ຳໜັກລວມອອກ (ຕາມແບບທີ່ລູກຄ້າໃຫ້):
+       * ຫຼາຍກວ່າໄດ້ ເພາະຊັ່ງແຍກສ່ວນມັກໄດ້ເກີນ, ແຕ່ນ້ອຍກວ່າແປວ່າຊັ່ງຕົກ.
+       * ສຳລັບ ຄຳແທ່ງ ບໍ່ແຍກເນື້ອລ້ວນ/ມີແກ້ວ ຈຶ່ງຂ້າມການກວດນີ້.
+       */
+      const split = pure.gt(0) || glass.gt(0);
+      if (split && pure.plus(glass).lt(out)) {
+        throw new BadRequestException(
+          `${goldType.nameLo}: ເນື້ອລ້ວນ + ມີແກ້ວ (${pure.plus(glass).toFixed()} g) ນ້ອຍກວ່ານ້ຳໜັກລວມອອກ (${out.toFixed()} g)`,
+        );
+      }
+
+      const perGram = average.get(goldType.id);
+      return {
+        goldType,
+        out,
+        pure: split ? pure : null,
+        glass: split ? glass : null,
+        /** ຂາດດຸ = ນ້ຳໜັກລວມອອກ − (ເນື້ອລ້ວນ + ມີແກ້ວ) — ຄຳນວນຢູ່ server. */
+        shortfall: split ? out.minus(pure).minus(glass) : null,
+        cost: perGram ? out.mul(perGram) : null,
+      };
+    });
+
+    const day = await this.businessDay.current();
+    const created = await this.prisma.$transaction(async (tx) => {
+      const last = await tx.goldHandover.aggregate({
+        where: { businessDayId: day.id, roundNo: { not: null } },
+        _max: { roundNo: true },
+      });
+      const roundNo = (last._max.roundNo ?? 0) + 1;
+
+      const rows = [];
+      for (const line of prepared) {
+        rows.push(
+          await tx.goldHandover.create({
+            data: {
+              code: await this.nextCode(tx, 'HO'),
+              shiftId,
+              businessDayId: day.id,
+              goldTypeId: line.goldType.id,
+              roundNo,
+              weightG: D(line.out),
+              grossWeightG: D(line.out),
+              pureWeightG: line.pure ? D(line.pure) : null,
+              glassWeightG: line.glass ? D(line.glass) : null,
+              shortfallG: line.shortfall ? D(line.shortfall) : null,
+              warehouseCost: line.cost ? D(line.cost) : null,
+              note: dto.note ?? null,
+              status: 'PENDING',
+              createdById: user.id,
+            },
+            include: { items: true, goldType: true },
+          }),
+        );
+      }
+      return rows;
+    });
+
+    const totalG = prepared.reduce((sum, l) => sum.plus(l.out), dec(0));
+    await this.notifications.notify({
+      kind: 'GOLD_HANDOVER',
+      recipientRole: 'WAREHOUSE',
+      title: 'ມີການມອບຄຳລະຫວ່າງມື້',
+      body: `ຮອບທີ ${created[0].roundNo} — ${prepared.map((l) => l.goldType.nameLo).join(', ')} — ${totalG.toFixed()} g`,
+      refType: 'GoldHandover',
+      refId: created[0].id,
+    });
+
+    return { roundNo: created[0].roundNo, rows: created };
   }
 
   /** Warehouse approves; the gold enters Stock (OLD) at zero added cost —
@@ -986,7 +1133,9 @@ export class StockService {
    * with a Lao reason rather than Infinity, and the UI renders "—".
    */
   async oldGoldSummary() {
-    const businessDate = BusinessDayService.toDateOnly();
+    // ທຽບກັບຖັນ timestamp ຈຶ່ງໃຊ້ທ່ຽງຄືນ "ທ້ອງຖິ່ນ" — ທ່ຽງຄືນ UTC ຈະຕັດເອົາ
+    // ການຮັບຊື້ຊ່ວງ 00:00–07:00 ຂອງມື້ນີ້ໄປນັບເປັນມື້ວານ.
+    const businessDate = BusinessDayService.localMidnight();
     const tomorrow = new Date(businessDate);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -1086,45 +1235,79 @@ export class StockService {
        */
       const remainingG = receivedG.minus(handedG);
       const shownRemainingG = remainingG.isNegative() ? dec(0) : remainingG;
-      const remainingPaid = receivedPaid.minus(handedPaid);
-      const shownRemainingPaid = remainingPaid.isNegative() ? dec(0) : remainingPaid;
 
-      const average = goldTypeAverage(
-        shownRemainingPaid,
-        shownRemainingG,
-        newWeightG,
-        goldType.code === 'BOILED',
-      );
+      /*
+       * ເງິນທີ່ຈ່າຍຄົງເຫຼືອ = ເງິນທີ່ຈ່າຍທັງໝົດ (ສູດໃນຊີດຂອງລູກຄ້າ: L6 = E6).
+       *
+       * ການມອບເຂົ້າສາງ ຍ້າຍ "ນ້ຳໜັກ" ເທົ່ານັ້ນ ບໍ່ແມ່ນ "ເງິນ" — ເງິນຈ່າຍອອກ
+       * ໄປແລ້ວຕອນຮັບຊື້ຄືນ. ສະນັ້ນ ສະເລ່ຍ/g ຂອງຕາຕະລາງ 2 ຈຶ່ງສູງຂຶ້ນເມື່ອມອບ
+       * ຫຼາຍ — ເປັນຕາມທີ່ລູກຄ້າຕ້ອງການ ແລະ ອະທິບາຍໄວ້ໃນກ່ອງ "ວິທີຄິດໄລ່".
+       */
+      const remainingPaid = receivedPaid;
+
+      // ສູດຂອງແບບນີ້ແມ່ນ ເງິນ ÷ ນ້ຳໜັກ ກົງໆ (ບໍ່ຫັກນ້ຳໜັກຄຳໃໝ່) —
+      // ສົ່ງ 0 ເປັນນ້ຳໜັກຄຳໃໝ່ ເພື່ອໃຊ້ການຈັດການ "—" ຂອງ helper ດຽວກັນ.
+      const receivedAverage = goldTypeAverage(receivedPaid, receivedG, dec(0), true);
+      const average = goldTypeAverage(remainingPaid, shownRemainingG, dec(0), true);
 
       return {
         goldTypeId: goldType.id,
         goldTypeCode: goldType.code,
         goldTypeNameLo: goldType.nameLo,
-        /** ຍອດຄົງເຫຼືອ — ຕົວເລກຫຼັກຂອງຕາຕະລາງສະຫຼຸບ. */
+
+        /** ຕາຕະລາງ 1 — ຮັບມາຈາກຜູ້ປະເມີນ (ກ່ອນມອບເຂົ້າສາງ). */
+        receivedG: receivedG.toFixed(),
+        receivedBahtWeight: gramsToBaht(receivedG).toFixed(),
+        receivedPaid: receivedPaid.toFixed(),
+        receivedAveragePerGram: receivedAverage.perGram ? receivedAverage.perGram.toFixed() : null,
+        receivedAveragePerBaht: receivedAverage.perBaht ? receivedAverage.perBaht.toFixed() : null,
+
+        /** ຕາຕະລາງ 2 — ຫຼັງສົ່ງມອບເຂົ້າສາງແລ້ວ. */
+        handedG: handedG.toFixed(),
+        handedPaid: handedPaid.toFixed(),
         weightG: shownRemainingG.toFixed(),
         bahtWeight: gramsToBaht(shownRemainingG).toFixed(),
-        quantity,
-        totalPaid: shownRemainingPaid.toFixed(),
-        /** ລາຍລະອຽດຫຼັງບ້ານ — ໃຫ້ຜູ້ໃຊ້ກວດຄືນໄດ້ວ່າ ຄົງເຫຼືອມາຈາກໃສ. */
-        receivedG: receivedG.toFixed(),
-        handedG: handedG.toFixed(),
-        receivedPaid: receivedPaid.toFixed(),
-        handedPaid: handedPaid.toFixed(),
-        newWeightG: newWeightG.toFixed(),
+        totalPaid: remainingPaid.toFixed(),
         averagePerGram: average.perGram ? average.perGram.toFixed() : null,
         averagePerBaht: average.perBaht ? average.perBaht.toFixed() : null,
         averageMessageLo: average.messageLo,
+
+        quantity,
+        /** ນ້ຳໜັກຄຳໃໝ່ທີ່ຈ່າຍອອກໃນການປ່ຽນ — ໄວ້ໃຫ້ລາຍງານອື່ນໃຊ້. */
+        newWeightG: newWeightG.toFixed(),
       };
     });
   }
 
   /** History ມອບຄຳ — ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້, ກວ້າງອອກໄດ້ຕາມສິດ. */
-  async listHandovers(status: ApprovalStatus | undefined, query: HistoryRangeDto, user?: AuthenticatedUser) {
+  async listHandovers(
+    status: ApprovalStatus | undefined,
+    query: HistoryRangeDto,
+    user?: AuthenticatedUser,
+    filters?: { goldTypeId?: string; q?: string },
+  ) {
     const range = this.range.resolve(query, user);
+    const q = filters?.q?.trim();
     const where = {
       deletedAt: null,
       createdAt: HistoryRangeService.window(range),
       ...(status ? { status } : {}),
+      ...(filters?.goldTypeId ? { goldTypeId: filters.goldTypeId } : {}),
+      // ຄົ້ນຫາ: ລະຫັດການມອບ · ລະຫັດ/ຊື່ລາຍການຄຳຕົ້ມ · ຊື່ຜູ້ມອບ.
+      ...(q
+        ? {
+            OR: [
+              { code: { contains: q, mode: 'insensitive' as const } },
+              { items: { some: { buyback: { code: { contains: q, mode: 'insensitive' as const } } } } },
+              {
+                items: {
+                  some: { buyback: { goldItem: { nameLo: { contains: q, mode: 'insensitive' as const } } } },
+                },
+              },
+              { shift: { user: { fullName: { contains: q, mode: 'insensitive' as const } } } },
+            ],
+          }
+        : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.goldHandover.findMany({
@@ -1176,7 +1359,8 @@ export class StockService {
       weightG: r.weightG.toFixed(),
       goldPercent: r.goldPercent ? r.goldPercent.toFixed() : null,
       payableAmount: r.payableAmount.toFixed(),
-      totalWeightG: toDec(r.weightG).mul(r.quantity).toFixed(),
+      /** ຄືກັນກັບ `weightG` — ຫົວບິນເກັບຍອດລວມຢູ່ແລ້ວ. ເກັບຊື່ໄວ້ໃຫ້ client ເກົ່າ. */
+      totalWeightG: toDec(r.weightG).toFixed(),
     }));
   }
 

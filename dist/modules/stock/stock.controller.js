@@ -86,8 +86,11 @@ let StockController = class StockController {
     }
     /* ---- §4.2 ມອບຄຳລະຫວ່າງມື້ ---- */
     // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ສິດກວ້າງວັນທີບັງຄັບຢູ່ HistoryRangeService ບໍ່ແມ່ນ FE.
-    listHandovers(query, user, status) {
-        return this.stock.listHandovers(status, query, user);
+    listHandovers(query, user) {
+        return this.stock.listHandovers(query.status, query, user, {
+            goldTypeId: query.goldTypeId,
+            q: query.q,
+        });
     }
     /** ລາຍການຄຳເກົ່າ (ຄຳຕົ້ມ) ທີ່ຍັງບໍ່ໄດ້ມອບ — ໃຫ້ຟອມເລືອກເປັນແຖວ. */
     pendingOldGoldItems(goldTypeId) {
@@ -218,14 +221,12 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], StockController.prototype, "oldGoldSummary", null);
 __decorate([
-    openapi.ApiQuery({ name: "status", required: false }),
     (0, common_1.Get)('handovers'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
-    __param(2, (0, common_1.Query)('status')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
+    __metadata("design:paramtypes", [stock_dto_1.HandoverQueryDto, Object]),
     __metadata("design:returntype", void 0)
 ], StockController.prototype, "listHandovers", null);
 __decorate([

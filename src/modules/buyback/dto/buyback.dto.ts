@@ -11,6 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
 
 export class BuybackPaymentLineDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
@@ -86,6 +87,19 @@ export class CreateBuybackDto {
 }
 
 /** Preview the §5.1 calculation without creating anything. */
+/**
+ * ຕົວກອງຂອງລາຍການປະຫວັດ.
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`:
+ * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
+ * `@Query('...')` ກໍຕາມ.
+ */
+export class ListBuybackDto extends HistoryRangeDto {
+  @IsOptional()
+  @IsIn(['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'])
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'CANCELLED';
+}
+
 export class PreviewBuybackDto {
   @IsIn(['KPV', 'OTHER_SHOP']) source: 'KPV' | 'OTHER_SHOP';
 

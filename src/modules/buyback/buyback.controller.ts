@@ -1,12 +1,16 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import type { ApprovalStatus } from '@prisma/client';
 import { BuybackService } from './buyback.service';
-import { CreateBuybackDto, PreviewBuybackDto, ReviewBuybackDto } from './dto/buyback.dto';
+import {
+  CreateBuybackDto,
+  ListBuybackDto,
+  PreviewBuybackDto,
+  ReviewBuybackDto,
+} from './dto/buyback.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequiresOpenShift } from '../../common/decorators/requires-shift.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
 @ApiTags('buyback')
 @ApiBearerAuth('bearer')
@@ -17,12 +21,8 @@ export class BuybackController {
   // The date range defaults to today and a Valuer cannot widen it —
   // HistoryRangeService enforces that, not the client.
   @Get()
-  list(
-    @Query() query: HistoryRangeDto,
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('status') status?: ApprovalStatus,
-  ) {
-    return this.buyback.list(status, query, user);
+  list(@Query() query: ListBuybackDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.buyback.list(query.status as ApprovalStatus | undefined, query, user);
   }
 
   /** Live §5.1 calculation for the Valuer's form. */

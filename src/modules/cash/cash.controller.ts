@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { CashService } from './cash.service';
 import {
+  BankHistoryDto,
   CreateBankTransactionDto,
   CreateCashRequestDto,
   CreateCashTransactionDto,
@@ -102,12 +103,8 @@ export class CashController {
   }
 
   @Get('bank/history')
-  bankHistory(
-    @Query() query: HistoryRangeDto,
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('sources') sources?: string,
-  ) {
-    return this.cash.bankHistory(query, user, COUNTER_SOURCES[sources ?? '']);
+  bankHistory(@Query() query: BankHistoryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.cash.bankHistory(query, user, COUNTER_SOURCES[query.sources ?? '']);
   }
 
   @Roles('FINANCIAL_CONTROLLER', 'ADMIN', 'MANAGER')

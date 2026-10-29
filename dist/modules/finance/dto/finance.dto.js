@@ -9,10 +9,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SettleApArCashDto = exports.CreateApArCashEntryDto = exports.UpdateApArCashCategoryDto = exports.CreateApArCashCategoryDto = exports.CreateConsignmentDto = exports.ConsignmentLineDto = exports.CreateIncomeExpenseDto = exports.IncomeExpenseLineDto = exports.UpdateIncomeExpenseCategoryDto = exports.CreateIncomeExpenseCategoryDto = exports.UpdateBankAccountDto = exports.CreateBankAccountDto = void 0;
+exports.SettleApArCashDto = exports.CreateApArCashEntryDto = exports.UpdateApArCashCategoryDto = exports.CreateApArCashCategoryDto = exports.CreateConsignmentDto = exports.ConsignmentLineDto = exports.CreateIncomeExpenseDto = exports.ConsignmentListDto = exports.IncomeExpenseHistoryDto = exports.IncomeExpenseLineDto = exports.UpdateIncomeExpenseCategoryDto = exports.CreateIncomeExpenseCategoryDto = exports.UpdateBankAccountDto = exports.CreateBankAccountDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
+const history_range_dto_1 = require("../../../common/dto/history-range.dto");
 /** §3.7 — Module ລາຍການ Bank */
 class CreateBankAccountDto {
     /** Ignored — the code is issued by CodeGeneratorService. */
@@ -137,6 +138,37 @@ __decorate([
     (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
     __metadata("design:type", String)
 ], IncomeExpenseLineDto.prototype, "amount", void 0);
+/**
+ * ຕົວກອງຂອງລາຍການປະຫວັດ.
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`:
+ * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
+ * `@Query('...')` ກໍຕາມ.
+ */
+class IncomeExpenseHistoryDto extends history_range_dto_1.HistoryRangeDto {
+    kind;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { kind: { required: false, enum: ["INCOME", "EXPENSE"], enum: ['INCOME', 'EXPENSE'] } };
+    }
+}
+exports.IncomeExpenseHistoryDto = IncomeExpenseHistoryDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['INCOME', 'EXPENSE']),
+    __metadata("design:type", String)
+], IncomeExpenseHistoryDto.prototype, "kind", void 0);
+class ConsignmentListDto extends history_range_dto_1.HistoryRangeDto {
+    status;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { status: { required: false, enum: ["HELD", "RETURNED"], enum: ['HELD', 'RETURNED'] } };
+    }
+}
+exports.ConsignmentListDto = ConsignmentListDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['HELD', 'RETURNED']),
+    __metadata("design:type", String)
+], ConsignmentListDto.prototype, "status", void 0);
 class CreateIncomeExpenseDto {
     categoryId;
     /** Single-leg form, kept so an older client still works. */

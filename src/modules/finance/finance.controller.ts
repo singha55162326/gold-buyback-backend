@@ -3,12 +3,14 @@ import type { ApArSide, IncomeExpenseKind } from '@prisma/client';
 import { FinanceService } from './finance.service';
 import { AdvanceService } from '../../common/services/advance.service';
 import {
+  ConsignmentListDto,
   CreateApArCashCategoryDto,
   CreateApArCashEntryDto,
   CreateBankAccountDto,
   CreateConsignmentDto,
   CreateIncomeExpenseCategoryDto,
   CreateIncomeExpenseDto,
+  IncomeExpenseHistoryDto,
   SettleApArCashDto,
   UpdateApArCashCategoryDto,
   UpdateBankAccountDto,
@@ -87,11 +89,14 @@ export class FinanceController {
 
   @Get('income-expense')
   incomeExpenseHistory(
-    @Query() query: HistoryRangeDto,
+    @Query() query: IncomeExpenseHistoryDto,
     @CurrentUser() user: AuthenticatedUser,
-    @Query('kind') kind?: IncomeExpenseKind,
   ) {
-    return this.finance.incomeExpenseHistory(kind, query, user);
+    return this.finance.incomeExpenseHistory(
+      query.kind as IncomeExpenseKind | undefined,
+      query,
+      user,
+    );
   }
 
   @Roles('FINANCIAL_CONTROLLER', 'ADMIN', 'MANAGER')
@@ -106,12 +111,8 @@ export class FinanceController {
   /* ---- §3.7 ຝາກສິນຄ້າ ---- */
 
   @Get('consignments')
-  consignments(
-    @Query() query: HistoryRangeDto,
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('status') status?: 'HELD' | 'RETURNED',
-  ) {
-    return this.finance.consignments(status, query, user);
+  consignments(@Query() query: ConsignmentListDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.finance.consignments(query.status, query, user);
   }
 
   @Roles('PAYMENT', 'FINANCIAL_CONTROLLER', 'ADMIN', 'MANAGER')
