@@ -9,10 +9,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SetBankNetBalanceDto = exports.CreateBankTransactionDto = exports.CreateCashTransactionDto = exports.ReviewCashRequestDto = exports.CreateCashRequestDto = exports.CashAmountLineDto = void 0;
+exports.SetBankNetBalanceDto = exports.CreateBankTransactionDto = exports.CreateCashTransactionDto = exports.ReviewCashRequestDto = exports.BankHistoryDto = exports.CreateCashRequestDto = exports.CashAmountLineDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
+const history_range_dto_1 = require("../../../common/dto/history-range.dto");
 class CashAmountLineDto {
     currency;
     amount;
@@ -55,6 +56,26 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateCashRequestDto.prototype, "note", void 0);
+/**
+ * ຕົວກອງຂອງລາຍການປະຫວັດ.
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`:
+ * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
+ * `@Query('...')` ກໍຕາມ.
+ */
+class BankHistoryDto extends history_range_dto_1.HistoryRangeDto {
+    /** ຊຸດອ້າງອີງທີ່ສະແດງຢູ່ໜ້າ Payment — ປັດຈຸບັນມີແຕ່ `counter`. */
+    sources;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { sources: { required: false, type: () => String, description: "\u0E8A\u0EB8\u0E94\u0EAD\u0EC9\u0EB2\u0E87\u0EAD\u0EB5\u0E87\u0E97\u0EB5\u0EC8\u0EAA\u0EB0\u0EC1\u0E94\u0E87\u0EA2\u0EB9\u0EC8\u0EDC\u0EC9\u0EB2 Payment \u2014 \u0E9B\u0EB1\u0E94\u0E88\u0EB8\u0E9A\u0EB1\u0E99\u0EA1\u0EB5\u0EC1\u0E95\u0EC8 `counter`.", enum: ['counter'] } };
+    }
+}
+exports.BankHistoryDto = BankHistoryDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['counter']),
+    __metadata("design:type", String)
+], BankHistoryDto.prototype, "sources", void 0);
 class ReviewCashRequestDto {
     decision;
     reason;

@@ -14,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
 
 /** §3.7 — Module ລາຍການ Bank */
 export class CreateBankAccountDto {
@@ -48,6 +49,21 @@ export class IncomeExpenseLineDto {
   @IsOptional() @IsString() bankAccountId?: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
   @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
+}
+
+/**
+ * ຕົວກອງຂອງລາຍການປະຫວັດ.
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`:
+ * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
+ * `@Query('...')` ກໍຕາມ.
+ */
+export class IncomeExpenseHistoryDto extends HistoryRangeDto {
+  @IsOptional() @IsIn(['INCOME', 'EXPENSE']) kind?: 'INCOME' | 'EXPENSE';
+}
+
+export class ConsignmentListDto extends HistoryRangeDto {
+  @IsOptional() @IsIn(['HELD', 'RETURNED']) status?: 'HELD' | 'RETURNED';
 }
 
 export class CreateIncomeExpenseDto {

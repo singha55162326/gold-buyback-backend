@@ -9,10 +9,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ReceiveOrderDto = exports.UpdateOrderStatusDto = exports.CreateOrderDto = exports.OrderLineDto = exports.OrderReceiptLinesDto = exports.OrderReceiptDto = void 0;
+exports.ReceiveOrderDto = exports.UpdateOrderStatusDto = exports.CreateOrderDto = exports.ListOrderDto = exports.OrderLineDto = exports.OrderReceiptLinesDto = exports.OrderReceiptDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
+const history_range_dto_1 = require("../../../common/dto/history-range.dto");
 class OrderReceiptDto {
     method;
     bankAccountId;
@@ -91,6 +92,39 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], OrderLineDto.prototype, "note", void 0);
+/**
+ * ຕົວກອງຂອງລາຍການປະຫວັດ.
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`:
+ * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
+ * `@Query('...')` ກໍຕາມ.
+ */
+class ListOrderDto extends history_range_dto_1.HistoryRangeDto {
+    status;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { status: { required: false, enum: ["COMPLETED", "CANCELLED", "ORDER_PLACED", "SENT_TO_SMITH", "RECEIVED_FROM_SMITH", "AWAITING_PICKUP"], enum: [
+                    'ORDER_PLACED',
+                    'SENT_TO_SMITH',
+                    'RECEIVED_FROM_SMITH',
+                    'AWAITING_PICKUP',
+                    'COMPLETED',
+                    'CANCELLED',
+                ] } };
+    }
+}
+exports.ListOrderDto = ListOrderDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)([
+        'ORDER_PLACED',
+        'SENT_TO_SMITH',
+        'RECEIVED_FROM_SMITH',
+        'AWAITING_PICKUP',
+        'COMPLETED',
+        'CANCELLED',
+    ]),
+    __metadata("design:type", String)
+], ListOrderDto.prototype, "status", void 0);
 class CreateOrderDto {
     phone;
     /** ເລກບິນ 4 ຕົວຫຼັກ (TOR §7). */
@@ -111,7 +145,7 @@ class CreateOrderDto {
     receipt;
     receipts;
     static _OPENAPI_METADATA_FACTORY() {
-        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, billNo: { required: true, type: () => String, description: "\u0EC0\u0EA5\u0E81\u0E9A\u0EB4\u0E99 4 \u0E95\u0EBB\u0EA7\u0EAB\u0EBC\u0EB1\u0E81 (TOR \u00A77).", pattern: "^\\d{4}$" }, productType: { required: true, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: true, type: () => String, description: "\u0E8A\u0EB7\u0EC8\u0E9E\u0EB0\u0E99\u0EB1\u0E81\u0E87\u0EB2\u0E99 \u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A Order." }, lines: { required: false, type: () => [require("./order.dto").OrderLineDto], description: "\u0EAB\u0EBC\u0EB2\u0E8D\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99\u0EC3\u0E99\u0E9A\u0EB4\u0E99\u0E94\u0EBD\u0EA7 (\u0E97\u0EB5\u0EC8\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0E82\u0ECD).\n\u0E9A\u0ECD\u0EC8\u0EAA\u0EBB\u0EC8\u0E87\u0EA1\u0EB2 = \u0E96\u0EB7\u0EA7\u0EC8\u0EB2\u0EC0\u0E9B\u0EB1\u0E99\u0E9A\u0EB4\u0E99\u0EC1\u0E96\u0EA7\u0E94\u0EBD\u0EA7 \u0E95\u0EB2\u0EA1\u0E8A\u0EC8\u0EAD\u0E87\u0E82\u0EC9\u0EB2\u0E87\u0EA5\u0EB8\u0EC8\u0EA1 (client \u0EC0\u0E81\u0EBB\u0EC8\u0EB2).", minItems: 1 }, goldItemId: { required: false, type: () => String }, weightG: { required: false, type: () => String }, quantity: { required: false, type: () => Number, minimum: 1 }, totalAmount: { required: true, type: () => String }, note: { required: false, type: () => String }, receipt: { required: false, type: () => require("./order.dto").OrderReceiptDto }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto] } };
+        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, billNo: { required: true, type: () => String, description: "\u0EC0\u0EA5\u0E81\u0E9A\u0EB4\u0E99 4 \u0E95\u0EBB\u0EA7\u0EAB\u0EBC\u0EB1\u0E81 (TOR \u00A77).", pattern: "^\\d{6}$" }, productType: { required: true, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: true, type: () => String, description: "\u0E8A\u0EB7\u0EC8\u0E9E\u0EB0\u0E99\u0EB1\u0E81\u0E87\u0EB2\u0E99 \u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A Order." }, lines: { required: false, type: () => [require("./order.dto").OrderLineDto], description: "\u0EAB\u0EBC\u0EB2\u0E8D\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99\u0EC3\u0E99\u0E9A\u0EB4\u0E99\u0E94\u0EBD\u0EA7 (\u0E97\u0EB5\u0EC8\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0E82\u0ECD).\n\u0E9A\u0ECD\u0EC8\u0EAA\u0EBB\u0EC8\u0E87\u0EA1\u0EB2 = \u0E96\u0EB7\u0EA7\u0EC8\u0EB2\u0EC0\u0E9B\u0EB1\u0E99\u0E9A\u0EB4\u0E99\u0EC1\u0E96\u0EA7\u0E94\u0EBD\u0EA7 \u0E95\u0EB2\u0EA1\u0E8A\u0EC8\u0EAD\u0E87\u0E82\u0EC9\u0EB2\u0E87\u0EA5\u0EB8\u0EC8\u0EA1 (client \u0EC0\u0E81\u0EBB\u0EC8\u0EB2).", minItems: 1 }, goldItemId: { required: false, type: () => String }, weightG: { required: false, type: () => String }, quantity: { required: false, type: () => Number, minimum: 1 }, totalAmount: { required: true, type: () => String }, note: { required: false, type: () => String }, receipt: { required: false, type: () => require("./order.dto").OrderReceiptDto }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto] } };
     }
 }
 exports.CreateOrderDto = CreateOrderDto;
@@ -120,7 +154,7 @@ __decorate([
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "phone", void 0);
 __decorate([
-    (0, class_validator_1.Matches)(/^\d{4}$/, { message: 'ເລກບິນຕ້ອງເປັນຕົວເລກ 4 ຕົວ' }),
+    (0, class_validator_1.Matches)(/^\d{6}$/, { message: 'ເລກບິນຕ້ອງເປັນຕົວເລກ 6 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "billNo", void 0);
 __decorate([

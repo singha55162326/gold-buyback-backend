@@ -53,15 +53,15 @@ let FinanceController = class FinanceController {
     deleteIncomeExpenseCategory(id, user) {
         return this.finance.deleteIncomeExpenseCategory(id, user);
     }
-    incomeExpenseHistory(query, user, kind) {
-        return this.finance.incomeExpenseHistory(kind, query, user);
+    incomeExpenseHistory(query, user) {
+        return this.finance.incomeExpenseHistory(query.kind, query, user);
     }
     createIncomeExpense(dto, user) {
         return this.finance.createIncomeExpense(dto, user);
     }
     /* ---- §3.7 ຝາກສິນຄ້າ ---- */
-    consignments(query, user, status) {
-        return this.finance.consignments(status, query, user);
+    consignments(query, user) {
+        return this.finance.consignments(query.status, query, user);
     }
     createConsignment(dto, user) {
         return this.finance.createConsignment(dto, user);
@@ -183,14 +183,12 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "deleteIncomeExpenseCategory", null);
 __decorate([
-    openapi.ApiQuery({ name: "kind", required: false }),
     (0, common_1.Get)('income-expense'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
-    __param(2, (0, common_1.Query)('kind')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
+    __metadata("design:paramtypes", [finance_dto_1.IncomeExpenseHistoryDto, Object]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "incomeExpenseHistory", null);
 __decorate([
@@ -204,14 +202,12 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "createIncomeExpense", null);
 __decorate([
-    openapi.ApiQuery({ name: "status", required: false }),
     (0, common_1.Get)('consignments'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
-    __param(2, (0, common_1.Query)('status')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object, String]),
+    __metadata("design:paramtypes", [finance_dto_1.ConsignmentListDto, Object]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "consignments", null);
 __decorate([

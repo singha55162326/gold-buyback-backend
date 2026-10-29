@@ -9,10 +9,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ReceiveCreditDto = exports.ReviewCreditDto = exports.CreateCreditDto = exports.ReceiptLinesDto = exports.CreditReceiptDto = void 0;
+exports.ReceiveCreditDto = exports.ReviewCreditDto = exports.CreateCreditDto = exports.ListCreditDto = exports.ReceiptLinesDto = exports.CreditReceiptDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
+const history_range_dto_1 = require("../../../common/dto/history-range.dto");
 class CreditReceiptDto {
     method;
     bankAccountId;
@@ -59,6 +60,25 @@ __decorate([
     (0, class_transformer_1.Type)(() => CreditReceiptDto),
     __metadata("design:type", Array)
 ], ReceiptLinesDto.prototype, "receipts", void 0);
+/**
+ * ຕົວກອງຂອງລາຍການປະຫວັດ.
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`:
+ * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
+ * `@Query('...')` ກໍຕາມ.
+ */
+class ListCreditDto extends history_range_dto_1.HistoryRangeDto {
+    status;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { status: { required: false, enum: ["PENDING", "APPROVED", "REJECTED", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] } };
+    }
+}
+exports.ListCreditDto = ListCreditDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED']),
+    __metadata("design:type", String)
+], ListCreditDto.prototype, "status", void 0);
 class CreateCreditDto {
     phone;
     goldItemId;

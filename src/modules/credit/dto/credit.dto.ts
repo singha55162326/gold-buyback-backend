@@ -9,6 +9,7 @@ import {
   ValidateNested,  ArrayMinSize,  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
 
 export class CreditReceiptDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
@@ -28,6 +29,19 @@ export class ReceiptLinesDto {
   @ValidateNested({ each: true })
   @Type(() => CreditReceiptDto)
   receipts: CreditReceiptDto[];
+}
+
+/**
+ * ຕົວກອງຂອງລາຍການປະຫວັດ.
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`:
+ * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
+ * `@Query('...')` ກໍຕາມ.
+ */
+export class ListCreditDto extends HistoryRangeDto {
+  @IsOptional()
+  @IsIn(['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'])
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'CANCELLED';
 }
 
 export class CreateCreditDto {

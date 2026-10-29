@@ -1,12 +1,16 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import type { ApprovalStatus } from '@prisma/client';
 import { CreditService } from './credit.service';
-import { CreateCreditDto, ReceiveCreditDto, ReviewCreditDto } from './dto/credit.dto';
+import {
+  CreateCreditDto,
+  ListCreditDto,
+  ReceiveCreditDto,
+  ReviewCreditDto,
+} from './dto/credit.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RequiresOpenShift } from '../../common/decorators/requires-shift.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 
 @ApiTags('credit')
 @ApiBearerAuth('bearer')
@@ -17,12 +21,8 @@ export class CreditController {
   // The date range defaults to today and a Valuer cannot widen it —
   // HistoryRangeService enforces that, not the client.
   @Get()
-  list(
-    @Query() query: HistoryRangeDto,
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('status') status?: ApprovalStatus,
-  ) {
-    return this.credit.list(status, query, user);
+  list(@Query() query: ListCreditDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.credit.list(query.status as ApprovalStatus | undefined, query, user);
   }
 
   @Roles('VALUER', 'ADMIN', 'MANAGER')
