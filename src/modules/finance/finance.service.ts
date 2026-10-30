@@ -29,6 +29,13 @@ const toDec = (value: Prisma.Decimal | null | undefined) => dec(value?.toFixed()
 const CURRENCIES: Currency[] = ['LAK', 'THB', 'USD'];
 
 /**
+ * ບັນຊີທີ່ລາຍງານ COH / ຄວາມຮັ່ງມີ ຊອກດ້ວຍ code (`ledger.service.ts`) —
+ * ຊື່ແກ້ໄດ້ ແຕ່ລຶບ ຫຼື ປິດບໍ່ໄດ້, ບໍ່ດັ່ງນັ້ນເງິນຝາກຂອງບັນຊີນັ້ນຫຼຸດອອກຈາກ
+ * ລາຍງານໄປເລີຍ ໂດຍຍອດຍັງຢູ່ໃນຖານຂໍ້ມູນ.
+ */
+const SYSTEM_BANK_CODES = ['BCEL', 'LDB', 'OTHER_BANK'];
+
+/**
  * The modules the updated TOR added to §3.7 and §9:
  *
  *   ລາຍການ Bank            — banks the shop maintains itself
@@ -685,6 +692,15 @@ export class FinanceService {
 
   // --- ແກ້ໄຂ / ລຶບ ຂໍ້ມູນອ້າງອີງ (§3.7) -------------------------------------
 
+  /** ແຖວລະບົບ: ປະຕິເສດການລຶບ ແລະ ການປິດການນຳໃຊ້. */
+  private assertNotSystemBank(code: string): void {
+    if (SYSTEM_BANK_CODES.includes(code)) {
+      throw new BadRequestException(
+        `ບັນຊີທະນາຄານ "${code}" ເປັນແຖວລະບົບ — ລຶບ ຫຼື ປິດການນຳໃຊ້ບໍ່ໄດ້. ແກ້ໄດ້ແຕ່ຊື່.`,
+      );
+    }
+  }
+
   /**
    * Refuse a delete that would orphan history. Reference data is named by
    * ledger rows that must stay readable, so deleting is only for rows
@@ -709,6 +725,7 @@ export class FinanceService {
   ) {
     const before = await this.prisma.bankAccount.findUnique({ where: { id } });
     if (!before) throw new NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+    if (dto.isActive === false) this.assertNotSystemBank(before.code);
     const after = await this.prisma.bankAccount.update({
       where: { id },
       data: {
@@ -733,6 +750,7 @@ export class FinanceService {
   async deleteBankAccount(id: string, user: AuthenticatedUser) {
     const before = await this.prisma.bankAccount.findUnique({ where: { id } });
     if (!before) throw new NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+    this.assertNotSystemBank(before.code);
 
     await this.assertUnused('ບັນຊີທະນາຄານ', [
       ['ທຸລະກຳ Bank', this.prisma.bankTransaction.count({ where: { bankAccountId: id } })],

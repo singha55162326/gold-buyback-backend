@@ -1,6 +1,25 @@
-import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * ຊ່ອງວ່າງ = ບໍ່ໄດ້ສົ່ງມາ.
+ *
+ * `@IsOptional()` ຂອງ class-validator ຖືວ່າມີແຕ່ `undefined`/`null` ເທົ່ານັ້ນ
+ * ທີ່ "ບໍ່ມີ" — ສະຕຣິງວ່າງຍັງຖືວ່າມີ ແລ້ວຕົກ `@Matches` ເປັນ 400. ແຕ່
+ * `<input type="date">` ທີ່ຜູ້ໃຊ້ລ້າງອອກ ສົ່ງມາເປັນ `from_date=` ແທ້ໆ, ແລະ
+ * `?from_date=` ຄວນໝາຍຄວາມວ່າ "ບໍ່ໄດ້ກອງ" ບໍ່ແມ່ນ "ຮູບແບບວັນທີຜິດ".
+ */
+const BlankIsAbsent = () =>
+  Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value));
+
+/** ຄືກັນ ແຕ່ແປງເປັນຕົວເລກ — ແທນ `@Type(() => Number)` ເພາະ `Number('')` = 0. */
+const BlankIsAbsentNumber = () =>
+  Transform(({ value }) =>
+    value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+      ? undefined
+      : Number(value),
+  );
 
 /**
  * The query contract every history endpoint accepts.
@@ -18,36 +37,40 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 export class HistoryRangeDto {
   @ApiPropertyOptional({ example: '2026-10-19', description: 'ຈາກວັນທີ (ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້)' })
   @IsOptional()
+  @BlankIsAbsent()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'from_date ຕ້ອງເປັນຮູບແບບ YYYY-MM-DD' })
   from_date?: string;
 
   @ApiPropertyOptional({ example: '2026-10-19', description: 'ຫາວັນທີ (ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້)' })
   @IsOptional()
+  @BlankIsAbsent()
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'to_date ຕ້ອງເປັນຮູບແບບ YYYY-MM-DD' })
   to_date?: string;
 
   /** camelCase alias for from_date. */
   @ApiPropertyOptional({ deprecated: true })
   @IsOptional()
+  @BlankIsAbsent()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   fromDate?: string;
 
   /** camelCase alias for to_date. */
   @ApiPropertyOptional({ deprecated: true })
   @IsOptional()
+  @BlankIsAbsent()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   toDate?: string;
 
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()
-  @Type(() => Number)
+  @BlankIsAbsentNumber()
   @IsInt()
   @Min(1)
   page?: number;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 200, default: 50 })
   @IsOptional()
-  @Type(() => Number)
+  @BlankIsAbsentNumber()
   @IsInt()
   @Min(1)
   @Max(200)
@@ -56,7 +79,7 @@ export class HistoryRangeDto {
   /** camelCase alias for page_size. */
   @ApiPropertyOptional({ deprecated: true })
   @IsOptional()
-  @Type(() => Number)
+  @BlankIsAbsentNumber()
   @IsInt()
   @Min(1)
   @Max(200)

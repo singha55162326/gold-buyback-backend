@@ -243,7 +243,7 @@ class HandoverQueryDto extends history_range_dto_1.HistoryRangeDto {
     /** ຄົ້ນຫາ ລະຫັດ / ລາຍການ / ຜູ້ມອບ. */
     q;
     static _OPENAPI_METADATA_FACTORY() {
-        return { status: { required: false, enum: ["APPROVED", "REJECTED", "PENDING", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] }, goldTypeId: { required: false, type: () => String, description: "\u0E81\u0EAD\u0E87\u0E95\u0EB2\u0EA1\u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3." }, q: { required: false, type: () => String, description: "\u0E84\u0EBB\u0EC9\u0E99\u0EAB\u0EB2 \u0EA5\u0EB0\u0EAB\u0EB1\u0E94 / \u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99 / \u0E9C\u0EB9\u0EC9\u0EA1\u0EAD\u0E9A.", maxLength: 100 } };
+        return { status: { required: false, enum: ["PENDING", "APPROVED", "REJECTED", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] }, goldTypeId: { required: false, type: () => String, description: "\u0E81\u0EAD\u0E87\u0E95\u0EB2\u0EA1\u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3." }, q: { required: false, type: () => String, description: "\u0E84\u0EBB\u0EC9\u0E99\u0EAB\u0EB2 \u0EA5\u0EB0\u0EAB\u0EB1\u0E94 / \u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99 / \u0E9C\u0EB9\u0EC9\u0EA1\u0EAD\u0E9A.", maxLength: 100 } };
     }
 }
 exports.HandoverQueryDto = HandoverQueryDto;

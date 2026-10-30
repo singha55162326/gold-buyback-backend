@@ -23,6 +23,12 @@ const D = (value) => new client_1.Prisma.Decimal(value.toFixed());
 const toDec = (value) => (0, domain_1.dec)(value?.toFixed() ?? 0);
 const CURRENCIES = ['LAK', 'THB', 'USD'];
 /**
+ * ບັນຊີທີ່ລາຍງານ COH / ຄວາມຮັ່ງມີ ຊອກດ້ວຍ code (`ledger.service.ts`) —
+ * ຊື່ແກ້ໄດ້ ແຕ່ລຶບ ຫຼື ປິດບໍ່ໄດ້, ບໍ່ດັ່ງນັ້ນເງິນຝາກຂອງບັນຊີນັ້ນຫຼຸດອອກຈາກ
+ * ລາຍງານໄປເລີຍ ໂດຍຍອດຍັງຢູ່ໃນຖານຂໍ້ມູນ.
+ */
+const SYSTEM_BANK_CODES = ['BCEL', 'LDB', 'OTHER_BANK'];
+/**
  * The modules the updated TOR added to §3.7 and §9:
  *
  *   ລາຍການ Bank            — banks the shop maintains itself
@@ -581,6 +587,12 @@ let FinanceService = class FinanceService {
         return `${stem}-${String(count + 1).padStart(3, '0')}`;
     }
     // --- ແກ້ໄຂ / ລຶບ ຂໍ້ມູນອ້າງອີງ (§3.7) -------------------------------------
+    /** ແຖວລະບົບ: ປະຕິເສດການລຶບ ແລະ ການປິດການນຳໃຊ້. */
+    assertNotSystemBank(code) {
+        if (SYSTEM_BANK_CODES.includes(code)) {
+            throw new common_1.BadRequestException(`ບັນຊີທະນາຄານ "${code}" ເປັນແຖວລະບົບ — ລຶບ ຫຼື ປິດການນຳໃຊ້ບໍ່ໄດ້. ແກ້ໄດ້ແຕ່ຊື່.`);
+        }
+    }
     /**
      * Refuse a delete that would orphan history. Reference data is named by
      * ledger rows that must stay readable, so deleting is only for rows
@@ -600,6 +612,8 @@ let FinanceService = class FinanceService {
         const before = await this.prisma.bankAccount.findUnique({ where: { id } });
         if (!before)
             throw new common_1.NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+        if (dto.isActive === false)
+            this.assertNotSystemBank(before.code);
         const after = await this.prisma.bankAccount.update({
             where: { id },
             data: {
@@ -624,6 +638,7 @@ let FinanceService = class FinanceService {
         const before = await this.prisma.bankAccount.findUnique({ where: { id } });
         if (!before)
             throw new common_1.NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+        this.assertNotSystemBank(before.code);
         await this.assertUnused('ບັນຊີທະນາຄານ', [
             ['ທຸລະກຳ Bank', this.prisma.bankTransaction.count({ where: { bankAccountId: id } })],
             ['ຍອດ Bank', this.prisma.bankNetBalance.count({ where: { bankAccountId: id } })],
