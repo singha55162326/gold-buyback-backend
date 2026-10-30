@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CreateHandoverDto = exports.HandoverTypeLineDto = exports.HandoverQueryDto = exports.FactoryAssessmentDto = exports.ReviewStockDto = exports.CreateTransferDto = exports.CreateStockOutDto = exports.CreateStockInDto = exports.StockLineDto = void 0;
+exports.CreateHandoverDto = exports.HandoverTypeLineDto = exports.HandoverQueryDto = exports.FactoryTrackingQueryDto = exports.FactoryAssessmentDto = exports.ReviewStockDto = exports.CreateTransferDto = exports.CreateStockOutDto = exports.CreateStockInDto = exports.StockLineDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
@@ -221,6 +221,26 @@ __decorate([
     (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກທີ່ FACTORY ປະເມີນ' }),
     __metadata("design:type", String)
 ], FactoryAssessmentDto.prototype, "factoryAssessedG", void 0);
+/**
+ * ຕົວກອງຂອງໜ້າຕິດຕາມ FACTORY (TOR §7.3).
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`
+ * ໄວ້: query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400.
+ */
+class FactoryTrackingQueryDto extends history_range_dto_1.HistoryRangeDto {
+    status;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { status: { required: false, enum: ["COMPLETED", "AWAITING_ASSESSMENT"], enum: ['AWAITING_ASSESSMENT', 'COMPLETED'] } };
+    }
+}
+exports.FactoryTrackingQueryDto = FactoryTrackingQueryDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['AWAITING_ASSESSMENT', 'COMPLETED'], {
+        message: 'ສະຖານະຕ້ອງເປັນ AWAITING_ASSESSMENT ຫຼື COMPLETED',
+    }),
+    __metadata("design:type", String)
+], FactoryTrackingQueryDto.prototype, "status", void 0);
 /**
  * ມອບຄຳລະຫວ່າງມື້ (TOR §4.2).
  *
