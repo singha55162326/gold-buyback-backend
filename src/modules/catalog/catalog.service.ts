@@ -9,6 +9,17 @@ import { AuditService } from '../../common/services/audit.service';
 import { CodeGeneratorService } from '../../common/services/code-generator.service';
 
 /**
+ * ແຖວທີ່ເຄື່ອງຄິດໄລ່ຊອກດ້ວຍ `code` — ຊື່ແກ້ໄດ້ ແຕ່ລຶບ ຫຼື ປິດບໍ່ໄດ້.
+ *
+ * ລາຄາຊື້ຄືນ ແລະ ການປ່ຽນ ແຍກສາຂາຕາມ code (`KIND_BY_CODE` ຢູ່ buyback ແລະ
+ * exchange), ແລະ ສາງຊອກ `CASHIER` / `FACTORY` ໂດຍກົງ. ລຶບແຖວໃດໜຶ່ງ =
+ * ສາຂານັ້ນຫາຍໄປ ໂດຍບໍ່ມີຂໍ້ຄວາມເຕືອນ, ແລະ ສ້າງຊື່ດຽວກັນຄືນໃໝ່ຈະໄດ້ code
+ * ໃໝ່ (GT-0xx) ທີ່ບໍ່ມີສາຂາ — ຜົນຄື "ປະເພດຄຳ ... ບໍ່ຮອງຮັບການຊື້ຄືນ".
+ */
+const SYSTEM_GOLD_TYPE_CODES = ['GOOD', 'HUMP', 'BAR', 'BOILED', 'TO_CASH', 'FREE_SWAP'];
+const SYSTEM_PARTNER_CODES = ['CASHIER', 'FACTORY'];
+
+/**
  * Simple reference data shared across the whole system:
  * ປະເພດຄຳ (§3.5), ລາຍການຄຳ (§3.5), ຕູ້ເຄື່ອງ (§3.7),
  * ແຫຼ່ງຮັບເຂົ້າ/ສົ່ງອອກ (§3.7) and bank accounts.
@@ -43,6 +54,25 @@ export class CatalogService {
     if (used.length > 0) {
       throw new BadRequestException(
         `ລຶບ${labelLo}ນີ້ບໍ່ໄດ້ — ຖືກໃຊ້ຢູ່ໃນ ${used.join(', ')}. ປິດການນຳໃຊ້ແທນ.`,
+      );
+    }
+  }
+
+  /**
+   * ແຖວລະບົບ: ປະຕິເສດການລຶບ ແລະ ການປິດການນຳໃຊ້.
+   *
+   * ອັນນີ້ມາກ່ອນ `assertUnused` ເພາະຕອນຕິດຕັ້ງໃໝ່ຍັງບໍ່ມີທຸລະກຳໃດອ້າງອີງ
+   * ເລີຍ — ການກວດການອ້າງອີງຈຶ່ງຜ່ານ ແລະ ແຖວສຳຄັນສຸດຖືກລຶບໄດ້ງ່າຍທີ່ສຸດ
+   * ຕອນທີ່ຮ້ານຍັງບໍ່ໄດ້ເລີ່ມໃຊ້.
+   */
+  private assertNotSystemRow(
+    labelLo: string,
+    code: string,
+    systemCodes: readonly string[],
+  ): void {
+    if (systemCodes.includes(code)) {
+      throw new BadRequestException(
+        `${labelLo} "${code}" ເປັນແຖວລະບົບ — ລຶບ ຫຼື ປິດການນຳໃຊ້ບໍ່ໄດ້. ແກ້ໄດ້ແຕ່ຊື່.`,
       );
     }
   }
@@ -236,6 +266,9 @@ export class CatalogService {
   ) {
     const before = await this.prisma.goldType.findFirst({ where: { id, deletedAt: null } });
     if (!before) throw new NotFoundException('ບໍ່ພົບປະເພດຄຳ');
+    if (data.isActive === false) {
+      this.assertNotSystemRow('ປະເພດຄຳ', before.code, SYSTEM_GOLD_TYPE_CODES);
+    }
     const after = await this.prisma.goldType.update({
       where: { id },
       data: {
@@ -254,11 +287,19 @@ export class CatalogService {
   async deleteGoldType(id: string, actorId: string) {
     const before = await this.prisma.goldType.findFirst({ where: { id, deletedAt: null } });
     if (!before) throw new NotFoundException('ບໍ່ພົບປະເພດຄຳ');
+    this.assertNotSystemRow('ປະເພດຄຳ', before.code, SYSTEM_GOLD_TYPE_CODES);
 
+    /*
+     * ແຖວບິນ (`BuybackLine`) ແລະ ຍອດລາຍມື້ (`StockOldTypeBalance`) ຕ້ອງນັບນຳ:
+     * ບິນໜຶ່ງມີຫຼາຍແຖວຕ່າງປະເພດຄຳກັນໄດ້, ສະນັ້ນຫົວບິນຢ່າງດຽວບໍ່ພໍ — ປະເພດຄຳ
+     * ທີ່ປາກົດແຕ່ໃນແຖວທີ 2 ຈະຜ່ານການກວດແລ້ວປະໃຫ້ແຖວນັ້ນຊີ້ແຖວທີ່ຖືກລຶບ.
+     */
     await this.assertUnused('ປະເພດຄຳ', [
       ['Buyback', this.prisma.buyback.count({ where: { goldTypeId: id } })],
+      ['ແຖວບິນ Buyback', this.prisma.buybackLine.count({ where: { goldTypeId: id } })],
       ['ລາຍການປ່ຽນ', this.prisma.exchangeOldLine.count({ where: { goldTypeId: id } })],
       ['Stock (OLD)', this.prisma.stockOldLedger.count({ where: { goldTypeId: id } })],
+      ['ຍອດ Stock (OLD)', this.prisma.stockOldTypeBalance.count({ where: { goldTypeId: id } })],
       ['ມອບຄຳ', this.prisma.goldHandover.count({ where: { goldTypeId: id } })],
       ['ລາຍການເຄື່ອນໄຫວສາງ', this.prisma.stockMovementLine.count({ where: { goldTypeId: id } })],
     ]);
@@ -371,6 +412,9 @@ export class CatalogService {
   ) {
     const before = await this.prisma.partnerSource.findFirst({ where: { id, deletedAt: null } });
     if (!before) throw new NotFoundException('ບໍ່ພົບແຫຼ່ງຮັບເຂົ້າ/ສົ່ງອອກ');
+    if (data.isActive === false) {
+      this.assertNotSystemRow('ແຫຼ່ງ', before.code, SYSTEM_PARTNER_CODES);
+    }
     const after = await this.prisma.partnerSource.update({
       where: { id },
       data: {
@@ -390,6 +434,7 @@ export class CatalogService {
   async deletePartner(id: string, actorId: string) {
     const before = await this.prisma.partnerSource.findFirst({ where: { id, deletedAt: null } });
     if (!before) throw new NotFoundException('ບໍ່ພົບແຫຼ່ງຮັບເຂົ້າ/ສົ່ງອອກ');
+    this.assertNotSystemRow('ແຫຼ່ງ', before.code, SYSTEM_PARTNER_CODES);
 
     await this.assertUnused('ແຫຼ່ງນີ້', [
       ['ລາຍການເຄື່ອນໄຫວສາງ', this.prisma.stockMovement.count({ where: { partnerId: id } })],
@@ -398,6 +443,8 @@ export class CatalogService {
       ['ຕິດຕາມ FACTORY', this.prisma.factoryOutTracking.count({ where: { partnerId: id } })],
       ['Order', this.prisma.order.count({ where: { supplierId: id } })],
       ['ກົດການລົງບັນຊີ', this.prisma.goldApArPostingRule.count({ where: { partnerId: id } })],
+      // ແຫຼ່ງທີ່ເປັນ "ຄູ່ບັນຊີ" ຂອງກົດ (§8.4 EASY ↔ WITHDRAW) ກໍລຶບບໍ່ໄດ້.
+      ['ຄູ່ບັນຊີຂອງກົດ', this.prisma.goldApArPostingRule.count({ where: { counterpartyId: id } })],
     ]);
 
     const after = await this.prisma.partnerSource.update({

@@ -141,7 +141,7 @@ class CreateBankTransactionDto {
     amount;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { bankAccountId: { required: true, type: () => String }, type: { required: true, description: "Only \u0E9D\u0EB2\u0E81 / \u0E96\u0EAD\u0E99 may be entered by hand.\n\nINCOME and EXPENSE still exist on BankTransaction, but they are written\nby Module \u0E88\u0EB1\u0E94\u0E81\u0EB2\u0E99\u0EA5\u0EB2\u0E8D\u0EAE\u0EB1\u0E9A\u0EA5\u0EB2\u0E8D\u0E88\u0EC8\u0EB2\u0E8D, which classifies them against a category.\nLetting this form post them directly produced bank rows no income or\nexpense report could account for.", enum: ["WITHDRAW", "DEPOSIT"], enum: ['DEPOSIT', 'WITHDRAW'] }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
+        return { bankAccountId: { required: true, type: () => String }, type: { required: true, description: "Only \u0E9D\u0EB2\u0E81 / \u0E96\u0EAD\u0E99 may be entered by hand.\n\nINCOME and EXPENSE still exist on BankTransaction, but they are written\nby Module \u0E88\u0EB1\u0E94\u0E81\u0EB2\u0E99\u0EA5\u0EB2\u0E8D\u0EAE\u0EB1\u0E9A\u0EA5\u0EB2\u0E8D\u0E88\u0EC8\u0EB2\u0E8D, which classifies them against a category.\nLetting this form post them directly produced bank rows no income or\nexpense report could account for.", enum: ["DEPOSIT", "WITHDRAW"], enum: ['DEPOSIT', 'WITHDRAW'] }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateBankTransactionDto = CreateBankTransactionDto;

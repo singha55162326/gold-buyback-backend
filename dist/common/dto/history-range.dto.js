@@ -15,6 +15,19 @@ const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 /**
+ * ຊ່ອງວ່າງ = ບໍ່ໄດ້ສົ່ງມາ.
+ *
+ * `@IsOptional()` ຂອງ class-validator ຖືວ່າມີແຕ່ `undefined`/`null` ເທົ່ານັ້ນ
+ * ທີ່ "ບໍ່ມີ" — ສະຕຣິງວ່າງຍັງຖືວ່າມີ ແລ້ວຕົກ `@Matches` ເປັນ 400. ແຕ່
+ * `<input type="date">` ທີ່ຜູ້ໃຊ້ລ້າງອອກ ສົ່ງມາເປັນ `from_date=` ແທ້ໆ, ແລະ
+ * `?from_date=` ຄວນໝາຍຄວາມວ່າ "ບໍ່ໄດ້ກອງ" ບໍ່ແມ່ນ "ຮູບແບບວັນທີຜິດ".
+ */
+const BlankIsAbsent = () => (0, class_transformer_1.Transform)(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value));
+/** ຄືກັນ ແຕ່ແປງເປັນຕົວເລກ — ແທນ `@Type(() => Number)` ເພາະ `Number('')` = 0. */
+const BlankIsAbsentNumber = () => (0, class_transformer_1.Transform)(({ value }) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+    ? undefined
+    : Number(value));
+/**
  * The query contract every history endpoint accepts.
  *
  * `from_date` / `to_date` are snake_case because that is what the client
@@ -52,31 +65,35 @@ exports.HistoryRangeDto = HistoryRangeDto;
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ example: '2026-10-19', description: 'ຈາກວັນທີ (ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້)' }),
     (0, class_validator_1.IsOptional)(),
+    BlankIsAbsent(),
     (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/, { message: 'from_date ຕ້ອງເປັນຮູບແບບ YYYY-MM-DD' }),
     __metadata("design:type", String)
 ], HistoryRangeDto.prototype, "from_date", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ example: '2026-10-19', description: 'ຫາວັນທີ (ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້)' }),
     (0, class_validator_1.IsOptional)(),
+    BlankIsAbsent(),
     (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/, { message: 'to_date ຕ້ອງເປັນຮູບແບບ YYYY-MM-DD' }),
     __metadata("design:type", String)
 ], HistoryRangeDto.prototype, "to_date", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ deprecated: true }),
     (0, class_validator_1.IsOptional)(),
+    BlankIsAbsent(),
     (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/),
     __metadata("design:type", String)
 ], HistoryRangeDto.prototype, "fromDate", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ deprecated: true }),
     (0, class_validator_1.IsOptional)(),
+    BlankIsAbsent(),
     (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/),
     __metadata("design:type", String)
 ], HistoryRangeDto.prototype, "toDate", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ minimum: 1, default: 1 }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
+    BlankIsAbsentNumber(),
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.Min)(1),
     __metadata("design:type", Number)
@@ -84,7 +101,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ minimum: 1, maximum: 200, default: 50 }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
+    BlankIsAbsentNumber(),
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.Min)(1),
     (0, class_validator_1.Max)(200),
@@ -93,7 +110,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ deprecated: true }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
+    BlankIsAbsentNumber(),
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.Min)(1),
     (0, class_validator_1.Max)(200),

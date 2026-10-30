@@ -71,7 +71,7 @@ __decorate([
 class ListCreditDto extends history_range_dto_1.HistoryRangeDto {
     status;
     static _OPENAPI_METADATA_FACTORY() {
-        return { status: { required: false, enum: ["APPROVED", "REJECTED", "PENDING", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] } };
+        return { status: { required: false, enum: ["PENDING", "APPROVED", "REJECTED", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] } };
     }
 }
 exports.ListCreditDto = ListCreditDto;

@@ -514,6 +514,9 @@ model GoldType {
   handovers        GoldHandover[]
   movementLines    StockMovementLine[]
 
+  /// ຊື່ຊ້ຳກັນບໍ່ໄດ້: ດັດສະນີ SQL ດິບ `gold_types_name_lo_active_key` ຢູ່ migration
+  /// 20261030090000_catalog_name_unique — `lower("nameLo")` + WHERE "deletedAt" IS NULL.
+  /// Prisma ຂຽນ lower() ແລະ WHERE ບໍ່ໄດ້ ຈຶ່ງບໍ່ປາກົດຢູ່ນີ້ — ຢ່າລຶບ.
   @@map("gold_types")
   buybackLines BuybackLine[]
 }
@@ -535,6 +538,9 @@ model GoldItem {
   credits  GoldCredit[]
   orders   Order[]
 
+  /// ຊື່ຊ້ຳກັນບໍ່ໄດ້: ດັດສະນີ SQL ດິບ `gold_items_name_lo_active_key` ຢູ່ migration
+  /// 20261030090000_catalog_name_unique — `lower("nameLo")` + WHERE "deletedAt" IS NULL.
+  /// Prisma ຂຽນ lower() ແລະ WHERE ບໍ່ໄດ້ ຈຶ່ງບໍ່ປາກົດຢູ່ນີ້ — ຢ່າລຶບ.
   @@map("gold_items")
   movementLines StockMovementLine[]
   buybackLines BuybackLine[]
@@ -584,6 +590,9 @@ model Cabinet {
   credits          GoldCredit[]
   movements        StockMovement[]
 
+  /// ຊື່ຊ້ຳກັນບໍ່ໄດ້: ດັດສະນີ SQL ດິບ `cabinets_name_lo_active_key` ຢູ່ migration
+  /// 20261030090000_catalog_name_unique — `lower("nameLo")` + WHERE "deletedAt" IS NULL.
+  /// Prisma ຂຽນ lower() ແລະ WHERE ບໍ່ໄດ້ ຈຶ່ງບໍ່ປາກົດຢູ່ນີ້ — ຢ່າລຶບ.
   @@map("cabinets")
 }
 
@@ -611,6 +620,9 @@ model PartnerSource {
   orders          Order[]
   cashApArLedger  CashApArLedger[]
 
+  /// ຊື່ຊ້ຳກັນບໍ່ໄດ້: ດັດສະນີ SQL ດິບ `partner_sources_name_lo_active_key` ຢູ່ migration
+  /// 20261030090000_catalog_name_unique — `lower("nameLo")` + WHERE "deletedAt" IS NULL.
+  /// Prisma ຂຽນ lower() ແລະ WHERE ບໍ່ໄດ້ ຈຶ່ງບໍ່ປາກົດຢູ່ນີ້ — ຢ່າລຶບ.
   @@map("partner_sources")
 }
 
@@ -633,6 +645,9 @@ model BankAccount {
   incomeExpenses    IncomeExpenseTransaction[]
   advances          AdvanceLedger[]
 
+  /// ຊື່ຊ້ຳກັນບໍ່ໄດ້: ດັດສະນີ SQL ດິບ `bank_accounts_name_lo_key` ຢູ່ migration
+  /// 20261030090000_catalog_name_unique — `lower("nameLo")`.
+  /// Prisma ຂຽນ lower() ບໍ່ໄດ້ ຈຶ່ງບໍ່ປາກົດຢູ່ນີ້ — ຢ່າລຶບ.
   @@map("bank_accounts")
 }
 
@@ -1707,6 +1722,9 @@ model IncomeExpenseCategory {
   transactions IncomeExpenseTransaction[]
 
   @@index([kind, sortOrder])
+  /// ຊື່ຊ້ຳກັນບໍ່ໄດ້: ດັດສະນີ SQL ດິບ `income_expense_categories_name_lo_active_key` ຢູ່ migration
+  /// 20261030090000_catalog_name_unique — `lower("nameLo")` + WHERE "deletedAt" IS NULL.
+  /// Prisma ຂຽນ lower() ແລະ WHERE ບໍ່ໄດ້ ຈຶ່ງບໍ່ປາກົດຢູ່ນີ້ — ຢ່າລຶບ.
   @@map("income_expense_categories")
 }
 
@@ -1849,6 +1867,9 @@ model ApArCashCategory {
 
   ledgerRows CashApArLedger[]
 
+  /// ຊື່ຊ້ຳກັນບໍ່ໄດ້: ດັດສະນີ SQL ດິບ `ap_ar_cash_categories_name_lo_active_key` ຢູ່ migration
+  /// 20261030090000_catalog_name_unique — `lower("nameLo")` + WHERE "deletedAt" IS NULL.
+  /// Prisma ຂຽນ lower() ແລະ WHERE ບໍ່ໄດ້ ຈຶ່ງບໍ່ປາກົດຢູ່ນີ້ — ຢ່າລຶບ.
   @@map("ap_ar_cash_categories")
 }
 
