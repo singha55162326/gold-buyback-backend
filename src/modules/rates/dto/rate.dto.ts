@@ -1,16 +1,17 @@
 import { IsNumberString } from 'class-validator';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 /** TOR §3.3 — 'Update Price Rate'. All four rates move together. */
 export class UpdateRatesDto {
-  @IsNumberString({}, { message: 'THB Sell Rate ຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'THB Sell Rate' })
   thbSellRate: string;
 
-  @IsNumberString({}, { message: 'USD Sell Rate ຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'USD Sell Rate' })
   usdSellRate: string;
 
-  @IsNumberString({}, { message: 'THB Buyback Rate ຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'THB Buyback Rate' })
   thbBuybackRate: string;
 
-  @IsNumberString({}, { message: 'USD Buyback Rate ຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'USD Buyback Rate' })
   usdBuybackRate: string;
 }

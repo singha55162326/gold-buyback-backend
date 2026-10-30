@@ -3,14 +3,15 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsNumberString,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 export class StockLineDto {
   /** Stock (NEW) lines reference a SKU. */
@@ -21,7 +22,7 @@ export class StockLineDto {
   @IsOptional() @IsString() goldItemId?: string;
   /** ໝວດ (ຮູບປະພັນ / ແທ່ງ) — Stock OLD IN ເທົ່ານັ້ນ. */
   @IsOptional() @IsIn(['JEWELRY', 'BAR']) oldCategory?: 'JEWELRY' | 'BAR';
-  @IsNumberString() weightG: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
   @IsInt() @Min(1) quantity: number;
 }
 
@@ -37,15 +38,15 @@ export class CreateStockInDto {
   lines: StockLineDto[];
 
   /** ຕົ້ນທຶນຄໍາ for the whole movement. */
-  @IsNumberString() totalCost: string;
+  @IsDecimalString({ labelLo: 'ຕົ້ນທຶນຄຳ' }) totalCost: string;
 
   /**
    * ຄ່າແຮງ (THB) — becomes an AP (Cash) liability.
    * Stock (NEW) ເທົ່ານັ້ນ; ຄຳເກົ່າຮັບມາຈາກ Cashier ບໍ່ມີຄ່າແຮງ.
    */
-  @IsOptional() @IsNumberString() laborFeeThb?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຄ່າແຮງ' }) laborFeeThb?: string;
 
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 export class CreateStockOutDto {
@@ -57,7 +58,7 @@ export class CreateStockOutDto {
   @IsOptional() @IsIn(['DYE', 'ETCH', 'MELT']) transformType?: 'DYE' | 'ETCH' | 'MELT';
 
   /** %ຄຳ — for OUT to ຊ່າງນອກ / ອື່ນໆ. */
-  @IsOptional() @IsNumberString() goldPercent?: string;
+  @IsOptional() @IsDecimalString({ labelLo: '%ຄຳ', max: 100 }) goldPercent?: string;
 
   @IsArray()
   @ArrayMinSize(1)
@@ -65,7 +66,7 @@ export class CreateStockOutDto {
   @Type(() => StockLineDto)
   lines: StockLineDto[];
 
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 export class CreateTransferDto {
@@ -79,16 +80,16 @@ export class CreateTransferDto {
   @Type(() => StockLineDto)
   lines: StockLineDto[];
 
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 export class ReviewStockDto {
   @IsIn(['APPROVED', 'REJECTED']) decision: 'APPROVED' | 'REJECTED';
-  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsString() @MaxLength(300, { message: 'ເຫດຜົນຍາວເກີນ 300 ຕົວ' }) reason?: string;
 }
 
 export class FactoryAssessmentDto {
-  @IsNumberString({}, { message: 'ນ້ຳໜັກຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກທີ່ FACTORY ປະເມີນ' })
   factoryAssessedG: string;
 }
 
@@ -116,7 +117,7 @@ export class HandoverQueryDto extends HistoryRangeDto {
   @IsOptional() @IsString() goldTypeId?: string;
 
   /** ຄົ້ນຫາ ລະຫັດ / ລາຍການ / ຜູ້ມອບ. */
-  @IsOptional() @IsString() q?: string;
+  @IsOptional() @IsString() @MaxLength(100, { message: 'ຄຳຄົ້ນຫາຍາວເກີນ 100 ຕົວ' }) q?: string;
 }
 
 /** ໜຶ່ງປະເພດຄຳໃນຮອບດຽວ — ຮອບໜຶ່ງມອບໄດ້ ຄຳດີ + ຄຳຫຍຸບ + ແທ່ງ ພ້ອມກັນ. */
@@ -124,15 +125,15 @@ export class HandoverTypeLineDto {
   @IsString() goldTypeId: string;
 
   /** ນ້ຳໜັກລວມອອກ. */
-  @IsNumberString({}, { message: 'ນ້ຳໜັກລວມອອກຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກລວມອອກ' })
   outWeightG: string;
 
   /** ເນື້ອລ້ວນ — ຄຳດີ / ຄຳຫຍຸບ ເທົ່ານັ້ນ. */
-  @IsOptional() @IsNumberString({}, { message: 'ເນື້ອລ້ວນຕ້ອງເປັນຕົວເລກ' })
+  @IsOptional() @IsDecimalString({ labelLo: 'ເນື້ອລ້ວນ' })
   pureWeightG?: string;
 
   /** ມີແກ້ວ — ຄຳດີ / ຄຳຫຍຸບ ເທົ່ານັ້ນ. */
-  @IsOptional() @IsNumberString({}, { message: 'ນ້ຳໜັກມີແກ້ວຕ້ອງເປັນຕົວເລກ' })
+  @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກມີແກ້ວ' })
   glassWeightG?: string;
 }
 
@@ -149,15 +150,15 @@ export class CreateHandoverDto {
   lines?: HandoverTypeLineDto[];
 
   /** ນ້ຳໜັກອອກ — ບັງຄັບສຳລັບ ຄຳດີ/ຄຳຫຍຸບ/ແທ່ງ. */
-  @IsOptional() @IsNumberString({}, { message: 'ນ້ຳໜັກອອກຕ້ອງເປັນຕົວເລກ' })
+  @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກອອກ' })
   grossWeightG?: string;
 
   /** ເນື້ອລ້ວນ. */
-  @IsOptional() @IsNumberString({}, { message: 'ເນື້ອລ້ວນຕ້ອງເປັນຕົວເລກ' })
+  @IsOptional() @IsDecimalString({ labelLo: 'ເນື້ອລ້ວນ' })
   pureWeightG?: string;
 
   /** ມີແກ້ວ. */
-  @IsOptional() @IsNumberString({}, { message: 'ນ້ຳໜັກມີແກ້ວຕ້ອງເປັນຕົວເລກ' })
+  @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກມີແກ້ວ' })
   glassWeightG?: string;
 
   /** ລາຍການ Buyback ຄຳຕົ້ມ ທີ່ມອບໃນຮອບນີ້. */
@@ -169,7 +170,7 @@ export class CreateHandoverDto {
    * ຮູບແບບເກົ່າ: ນ້ຳໜັກກ້ອນດຽວ. ຍັງຮັບໄວ້ເພື່ອບໍ່ໃຫ້ client ເກົ່າພັງ,
    * ແຕ່ຟອມໃໝ່ສົ່ງ grossWeightG ມາແທນ.
    */
-  @IsOptional() @IsNumberString() weightG?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG?: string;
 
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }

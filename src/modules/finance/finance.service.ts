@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, type ApArSide, type Currency, type IncomeExpenseKind } from '@prisma/client';
 import { dec, netCashApAr, partnerBalance, type CashApArReason, type Decimal } from '@kpv/domain';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -48,7 +53,27 @@ export class FinanceService {
    * §3.7 — Module ລາຍການ Bank
    * ---------------------------------------------------------------- */
 
+  /**
+   * ຊື່ຊ້ຳໃນລາຍການເລືອກ = ເລືອກຜິດແຖວ ແລ້ວຍອດໄປຜິດບ່ອນ.
+   *
+   * `scope` ຕ່າງກັນຕາມຕາຕະລາງ: ສ່ວນໃຫຍ່ລຶບແບບ soft (`deletedAt`) ແຕ່ບັນຊີ
+   * ທະນາຄານບໍ່ມີຖັນນັ້ນ ຈຶ່ງກວດທຸກແຖວ.
+   */
+  private async assertNameFree(
+    model: { findFirst(args: unknown): Promise<unknown> },
+    nameLo: string,
+    labelLo: string,
+    scope: Record<string, unknown> = { deletedAt: null },
+  ): Promise<void> {
+    const existing = await model.findFirst({
+      where: { nameLo: { equals: nameLo.trim(), mode: 'insensitive' }, ...scope },
+      select: { id: true },
+    });
+    if (existing) throw new ConflictException(`${labelLo} "${nameLo.trim()}" ມີຢູ່ແລ້ວ`);
+  }
+
   async createBankAccount(dto: CreateBankAccountDto, user: AuthenticatedUser) {
+    await this.assertNameFree(this.prisma.bankAccount as never, dto.nameLo, 'ບັນຊີທະນາຄານ', {});
     const max = await this.prisma.bankAccount.aggregate({ _max: { sortOrder: true } });
     const code = await this.codes.nextFor('BANK', this.prisma.bankAccount);
     const created = await this.prisma.bankAccount.create({
@@ -84,6 +109,7 @@ export class FinanceService {
     user: AuthenticatedUser,
   ) {
     const max = await this.prisma.incomeExpenseCategory.aggregate({ _max: { sortOrder: true } });
+    await this.assertNameFree(this.prisma.incomeExpenseCategory, dto.nameLo, 'ໝວດຮັບຈ່າຍ');
     const code = await this.codes.nextFor('INCOME_EXPENSE_CATEGORY', this.prisma.incomeExpenseCategory);
     const created = await this.prisma.incomeExpenseCategory.create({
       data: {
@@ -386,6 +412,7 @@ export class FinanceService {
 
   async createApArCategory(dto: CreateApArCashCategoryDto, user: AuthenticatedUser) {
     const max = await this.prisma.apArCashCategory.aggregate({ _max: { sortOrder: true } });
+    await this.assertNameFree(this.prisma.apArCashCategory as never, dto.nameLo, 'ປະເພດລາຍການ AP-AR');
     const code = await this.codes.nextFor('APAR_CASH_CATEGORY', this.prisma.apArCashCategory);
     const created = await this.prisma.apArCashCategory.create({
       data: {

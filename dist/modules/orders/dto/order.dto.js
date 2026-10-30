@@ -14,6 +14,7 @@ const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 const history_range_dto_1 = require("../../../common/dto/history-range.dto");
+const decimal_string_validator_1 = require("../../../common/dto/decimal-string.validator");
 class OrderReceiptDto {
     method;
     bankAccountId;
@@ -38,7 +39,7 @@ __decorate([
     __metadata("design:type", String)
 ], OrderReceiptDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], OrderReceiptDto.prototype, "amount", void 0);
 /** The legs of one receipt — ສົດ and ໂອນ, several currencies, one bill. */
@@ -65,7 +66,7 @@ class OrderLineDto {
     amount;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { goldItemId: { required: true, type: () => String }, weightG: { required: true, type: () => String }, quantity: { required: true, type: () => Number, minimum: 1 }, amount: { required: false, type: () => String, description: "\u0E8D\u0EAD\u0E94\u0EC0\u0E87\u0EB4\u0E99\u0E82\u0EAD\u0E87\u0EC1\u0E96\u0EA7\u0E99\u0EB5\u0EC9 \u2014 \u0EA7\u0EC8\u0EB2\u0E87\u0EC4\u0E94\u0EC9 \u0E96\u0EC9\u0EB2\u0EAE\u0EC9\u0EB2\u0E99\u0E84\u0EB4\u0E94\u0EA5\u0EA7\u0EA1\u0EA2\u0EB9\u0EC8\u0EAB\u0EBB\u0EA7\u0E9A\u0EB4\u0E99." }, note: { required: false, type: () => String } };
+        return { goldItemId: { required: true, type: () => String }, weightG: { required: true, type: () => String }, quantity: { required: true, type: () => Number, minimum: 1 }, amount: { required: false, type: () => String, description: "\u0E8D\u0EAD\u0E94\u0EC0\u0E87\u0EB4\u0E99\u0E82\u0EAD\u0E87\u0EC1\u0E96\u0EA7\u0E99\u0EB5\u0EC9 \u2014 \u0EA7\u0EC8\u0EB2\u0E87\u0EC4\u0E94\u0EC9 \u0E96\u0EC9\u0EB2\u0EAE\u0EC9\u0EB2\u0E99\u0E84\u0EB4\u0E94\u0EA5\u0EA7\u0EA1\u0EA2\u0EB9\u0EC8\u0EAB\u0EBB\u0EA7\u0E9A\u0EB4\u0E99." }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.OrderLineDto = OrderLineDto;
@@ -74,7 +75,7 @@ __decorate([
     __metadata("design:type", String)
 ], OrderLineDto.prototype, "goldItemId", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)({}, { message: 'ນ້ຳໜັກຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກ' }),
     __metadata("design:type", String)
 ], OrderLineDto.prototype, "weightG", void 0);
 __decorate([
@@ -84,12 +85,13 @@ __decorate([
 ], OrderLineDto.prototype, "quantity", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], OrderLineDto.prototype, "amount", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], OrderLineDto.prototype, "note", void 0);
 /**
@@ -145,7 +147,7 @@ class CreateOrderDto {
     receipt;
     receipts;
     static _OPENAPI_METADATA_FACTORY() {
-        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, billNo: { required: true, type: () => String, description: "\u0EC0\u0EA5\u0E81\u0E9A\u0EB4\u0E99 4 \u0E95\u0EBB\u0EA7\u0EAB\u0EBC\u0EB1\u0E81 (TOR \u00A77).", pattern: "^\\d{6}$" }, productType: { required: true, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: true, type: () => String, description: "\u0E8A\u0EB7\u0EC8\u0E9E\u0EB0\u0E99\u0EB1\u0E81\u0E87\u0EB2\u0E99 \u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A Order." }, lines: { required: false, type: () => [require("./order.dto").OrderLineDto], description: "\u0EAB\u0EBC\u0EB2\u0E8D\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99\u0EC3\u0E99\u0E9A\u0EB4\u0E99\u0E94\u0EBD\u0EA7 (\u0E97\u0EB5\u0EC8\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0E82\u0ECD).\n\u0E9A\u0ECD\u0EC8\u0EAA\u0EBB\u0EC8\u0E87\u0EA1\u0EB2 = \u0E96\u0EB7\u0EA7\u0EC8\u0EB2\u0EC0\u0E9B\u0EB1\u0E99\u0E9A\u0EB4\u0E99\u0EC1\u0E96\u0EA7\u0E94\u0EBD\u0EA7 \u0E95\u0EB2\u0EA1\u0E8A\u0EC8\u0EAD\u0E87\u0E82\u0EC9\u0EB2\u0E87\u0EA5\u0EB8\u0EC8\u0EA1 (client \u0EC0\u0E81\u0EBB\u0EC8\u0EB2).", minItems: 1 }, goldItemId: { required: false, type: () => String }, weightG: { required: false, type: () => String }, quantity: { required: false, type: () => Number, minimum: 1 }, totalAmount: { required: true, type: () => String }, note: { required: false, type: () => String }, receipt: { required: false, type: () => require("./order.dto").OrderReceiptDto }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto] } };
+        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, billNo: { required: true, type: () => String, description: "\u0EC0\u0EA5\u0E81\u0E9A\u0EB4\u0E99 4 \u0E95\u0EBB\u0EA7\u0EAB\u0EBC\u0EB1\u0E81 (TOR \u00A77).", pattern: "^\\d{6}$" }, productType: { required: true, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: true, type: () => String, description: "\u0E8A\u0EB7\u0EC8\u0E9E\u0EB0\u0E99\u0EB1\u0E81\u0E87\u0EB2\u0E99 \u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A Order.", maxLength: 80 }, lines: { required: false, type: () => [require("./order.dto").OrderLineDto], description: "\u0EAB\u0EBC\u0EB2\u0E8D\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99\u0EC3\u0E99\u0E9A\u0EB4\u0E99\u0E94\u0EBD\u0EA7 (\u0E97\u0EB5\u0EC8\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0E82\u0ECD).\n\u0E9A\u0ECD\u0EC8\u0EAA\u0EBB\u0EC8\u0E87\u0EA1\u0EB2 = \u0E96\u0EB7\u0EA7\u0EC8\u0EB2\u0EC0\u0E9B\u0EB1\u0E99\u0E9A\u0EB4\u0E99\u0EC1\u0E96\u0EA7\u0E94\u0EBD\u0EA7 \u0E95\u0EB2\u0EA1\u0E8A\u0EC8\u0EAD\u0E87\u0E82\u0EC9\u0EB2\u0E87\u0EA5\u0EB8\u0EC8\u0EA1 (client \u0EC0\u0E81\u0EBB\u0EC8\u0EB2).", minItems: 1 }, goldItemId: { required: false, type: () => String }, weightG: { required: false, type: () => String }, quantity: { required: false, type: () => Number, minimum: 1 }, totalAmount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 }, receipt: { required: false, type: () => require("./order.dto").OrderReceiptDto }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto] } };
     }
 }
 exports.CreateOrderDto = CreateOrderDto;
@@ -163,6 +165,7 @@ __decorate([
 ], CreateOrderDto.prototype, "productType", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(80, { message: 'ຊື່ພະນັກງານຍາວເກີນ 80 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "staffName", void 0);
 __decorate([
@@ -180,7 +183,7 @@ __decorate([
 ], CreateOrderDto.prototype, "goldItemId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກ' }),
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "weightG", void 0);
 __decorate([
@@ -190,12 +193,13 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateOrderDto.prototype, "quantity", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຍອດລວມ' }),
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "totalAmount", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "note", void 0);
 __decorate([
@@ -230,7 +234,7 @@ class UpdateOrderStatusDto {
                     'AWAITING_PICKUP',
                     'COMPLETED',
                     'CANCELLED',
-                ] }, supplierId: { required: false, type: () => String, description: "Required for SENT_TO_SMITH \u2014 \u0EC0\u0EA5\u0EB7\u0EAD\u0E81 Supplier (TOR \u00A77)." }, receivedFromSmithAt: { required: false, type: () => String, description: "Required for RECEIVED_FROM_SMITH \u2014 \u0EA7\u0EB1\u0E99\u0E97\u0EB5\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }, customerPickupAt: { required: false, type: () => String, description: "Required for COMPLETED \u2014 \u0EA7\u0EB1\u0E99\u0E97\u0EB5\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0EA1\u0EB2\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }, note: { required: false, type: () => String } };
+                ] }, supplierId: { required: false, type: () => String, description: "Required for SENT_TO_SMITH \u2014 \u0EC0\u0EA5\u0EB7\u0EAD\u0E81 Supplier (TOR \u00A77)." }, receivedFromSmithAt: { required: false, type: () => String, description: "Required for RECEIVED_FROM_SMITH \u2014 \u0EA7\u0EB1\u0E99\u0E97\u0EB5\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }, customerPickupAt: { required: false, type: () => String, description: "Required for COMPLETED \u2014 \u0EA7\u0EB1\u0E99\u0E97\u0EB5\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0EA1\u0EB2\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.UpdateOrderStatusDto = UpdateOrderStatusDto;
@@ -262,6 +266,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], UpdateOrderStatusDto.prototype, "note", void 0);
 class ReceiveOrderDto {
@@ -294,7 +299,7 @@ __decorate([
 ], ReceiveOrderDto.prototype, "currency", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], ReceiveOrderDto.prototype, "amount", void 0);
 __decorate([

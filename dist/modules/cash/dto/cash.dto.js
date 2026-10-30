@@ -14,6 +14,7 @@ const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 const history_range_dto_1 = require("../../../common/dto/history-range.dto");
+const decimal_string_validator_1 = require("../../../common/dto/decimal-string.validator");
 class CashAmountLineDto {
     currency;
     amount;
@@ -27,7 +28,7 @@ __decorate([
     __metadata("design:type", String)
 ], CashAmountLineDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], CashAmountLineDto.prototype, "amount", void 0);
 /** ເບີກເງິນ (+) / ມອບເງິນ (-) — TOR §4.1. */
@@ -36,7 +37,7 @@ class CreateCashRequestDto {
     lines;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { direction: { required: true, enum: ["WITHDRAW", "HANDOVER"], enum: ['WITHDRAW', 'HANDOVER'] }, lines: { required: true, type: () => [require("./cash.dto").CashAmountLineDto], minItems: 1 }, note: { required: false, type: () => String } };
+        return { direction: { required: true, enum: ["WITHDRAW", "HANDOVER"], enum: ['WITHDRAW', 'HANDOVER'] }, lines: { required: true, type: () => [require("./cash.dto").CashAmountLineDto], minItems: 1 }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateCashRequestDto = CreateCashRequestDto;
@@ -54,6 +55,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateCashRequestDto.prototype, "note", void 0);
 /**
@@ -80,7 +82,7 @@ class ReviewCashRequestDto {
     decision;
     reason;
     static _OPENAPI_METADATA_FACTORY() {
-        return { decision: { required: true, enum: ["APPROVED", "REJECTED"], enum: ['APPROVED', 'REJECTED'] }, reason: { required: false, type: () => String } };
+        return { decision: { required: true, enum: ["APPROVED", "REJECTED"], enum: ['APPROVED', 'REJECTED'] }, reason: { required: false, type: () => String, maxLength: 300 } };
     }
 }
 exports.ReviewCashRequestDto = ReviewCashRequestDto;
@@ -91,6 +93,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(300, { message: 'ເຫດຜົນຍາວເກີນ 300 ຕົວ' }),
     __metadata("design:type", String)
 ], ReviewCashRequestDto.prototype, "reason", void 0);
 /** Direct Cash In/Out/Other Income/Expense — TOR §3.7. */
@@ -100,7 +103,7 @@ class CreateCashTransactionDto {
     amount;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { type: { required: true, enum: ["IN", "OUT", "OTHER_INCOME", "OTHER_EXPENSE"], enum: ['IN', 'OUT', 'OTHER_INCOME', 'OTHER_EXPENSE'] }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String } };
+        return { type: { required: true, enum: ["IN", "OUT", "OTHER_INCOME", "OTHER_EXPENSE"], enum: ['IN', 'OUT', 'OTHER_INCOME', 'OTHER_EXPENSE'] }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateCashTransactionDto = CreateCashTransactionDto;
@@ -113,12 +116,13 @@ __decorate([
     __metadata("design:type", String)
 ], CreateCashTransactionDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], CreateCashTransactionDto.prototype, "amount", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateCashTransactionDto.prototype, "note", void 0);
 /** Bank Deposit/Withdraw/Income/Expense — TOR §3.7. */
@@ -137,7 +141,7 @@ class CreateBankTransactionDto {
     amount;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { bankAccountId: { required: true, type: () => String }, type: { required: true, description: "Only \u0E9D\u0EB2\u0E81 / \u0E96\u0EAD\u0E99 may be entered by hand.\n\nINCOME and EXPENSE still exist on BankTransaction, but they are written\nby Module \u0E88\u0EB1\u0E94\u0E81\u0EB2\u0E99\u0EA5\u0EB2\u0E8D\u0EAE\u0EB1\u0E9A\u0EA5\u0EB2\u0E8D\u0E88\u0EC8\u0EB2\u0E8D, which classifies them against a category.\nLetting this form post them directly produced bank rows no income or\nexpense report could account for.", enum: ["DEPOSIT", "WITHDRAW"], enum: ['DEPOSIT', 'WITHDRAW'] }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String } };
+        return { bankAccountId: { required: true, type: () => String }, type: { required: true, description: "Only \u0E9D\u0EB2\u0E81 / \u0E96\u0EAD\u0E99 may be entered by hand.\n\nINCOME and EXPENSE still exist on BankTransaction, but they are written\nby Module \u0E88\u0EB1\u0E94\u0E81\u0EB2\u0E99\u0EA5\u0EB2\u0E8D\u0EAE\u0EB1\u0E9A\u0EA5\u0EB2\u0E8D\u0E88\u0EC8\u0EB2\u0E8D, which classifies them against a category.\nLetting this form post them directly produced bank rows no income or\nexpense report could account for.", enum: ["WITHDRAW", "DEPOSIT"], enum: ['DEPOSIT', 'WITHDRAW'] }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateBankTransactionDto = CreateBankTransactionDto;
@@ -154,12 +158,13 @@ __decorate([
     __metadata("design:type", String)
 ], CreateBankTransactionDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], CreateBankTransactionDto.prototype, "amount", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateBankTransactionDto.prototype, "note", void 0);
 /** ເງິນ Bank ສຸດທິ — ADMIN/MANAGER only (TOR §3.7). */
@@ -181,7 +186,7 @@ __decorate([
     __metadata("design:type", String)
 ], SetBankNetBalanceDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຍອດເງິນສຸດທິ' }),
     __metadata("design:type", String)
 ], SetBankNetBalanceDto.prototype, "netAmount", void 0);
 //# sourceMappingURL=cash.dto.js.map

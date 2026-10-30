@@ -4,7 +4,6 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsNumberString,
   IsOptional,
   IsString,
   Matches,
@@ -15,6 +14,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 /** §3.7 — Module ລາຍການ Bank */
 export class CreateBankAccountDto {
@@ -48,7 +48,7 @@ export class IncomeExpenseLineDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
 }
 
 /**
@@ -73,7 +73,7 @@ export class CreateIncomeExpenseDto {
   @IsOptional() @IsIn(['CASH', 'BANK']) method?: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsOptional() @IsIn(['LAK', 'THB', 'USD']) currency?: 'LAK' | 'THB' | 'USD';
-  @IsOptional() @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount?: string;
 
   /** Multi-leg form: one transaction paid part ສົດ, part ໂອນ. */
   @IsOptional()
@@ -82,13 +82,13 @@ export class CreateIncomeExpenseDto {
   @Type(() => IncomeExpenseLineDto)
   payments?: IncomeExpenseLineDto[];
 
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 /** §3.7 — Module ຝາກສິນຄ້າ */
 export class ConsignmentLineDto {
   @IsString() @MinLength(1) nameLo: string;
-  @IsNumberString() weightG: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
   @IsInt() @Min(1) quantity: number;
 }
 
@@ -101,8 +101,8 @@ export class CreateConsignmentDto {
   @Matches(/^\d{8}$/, { message: 'ເບີໂທຕ້ອງເປັນຕົວເລກ 8 ໂຕ' })
   phone: string;
 
-  @IsString() @MinLength(1) customerName: string;
-  @IsString() @MinLength(1) staffName: string;
+  @IsString() @MaxLength(80, { message: 'ຊື່ລູກຄ້າຍາວເກີນ 80 ຕົວ' }) @MinLength(1) customerName: string;
+  @IsString() @MaxLength(80, { message: 'ຊື່ພະນັກງານຍາວເກີນ 80 ຕົວ' }) @MinLength(1) staffName: string;
 
   @IsArray()
   @ArrayMinSize(1, { message: 'ຕ້ອງມີລາຍການຝາກຢ່າງໜ້ອຍ 1 ລາຍການ' })
@@ -110,7 +110,7 @@ export class CreateConsignmentDto {
   @Type(() => ConsignmentLineDto)
   lines: ConsignmentLineDto[];
 
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 /** §9.1 — Module ລາຍການ AP-AR (Cash) */
@@ -137,8 +137,8 @@ export class CreateApArCashEntryDto {
   @IsString() partnerId: string;
   @IsString() categoryId: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
-  @IsOptional() @IsString() note?: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 /** §9.3 / §9.4 — ປຸ່ມ Payment */
@@ -147,6 +147,6 @@ export class SettleApArCashDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString() amount: string;
-  @IsOptional() @IsString() note?: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }

@@ -1,24 +1,25 @@
 import {
+  ArrayMinSize,
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
-  IsNumberString,
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
   ValidateNested,
-  ArrayMinSize,
-  IsArray,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 export class OrderReceiptDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
 }
 
 /** The legs of one receipt — ສົດ and ໂອນ, several currencies, one bill. */
@@ -33,11 +34,11 @@ export class OrderReceiptLinesDto {
 /** ແຖວລາຍການໃນບິນ Order. */
 export class OrderLineDto {
   @IsString() goldItemId: string;
-  @IsNumberString({}, { message: 'ນ້ຳໜັກຕ້ອງເປັນຕົວເລກ' }) weightG: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
   @IsInt() @Min(1) quantity: number;
   /** ຍອດເງິນຂອງແຖວນີ້ — ວ່າງໄດ້ ຖ້າຮ້ານຄິດລວມຢູ່ຫົວບິນ. */
-  @IsOptional() @IsNumberString() amount?: string;
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 /**
@@ -78,7 +79,7 @@ export class CreateOrderDto {
   productType: 'IT' | 'ITP';
 
   /** ຊື່ພະນັກງານ ທີ່ຮັບ Order. */
-  @IsString() staffName: string;
+  @IsString() @MaxLength(80, { message: 'ຊື່ພະນັກງານຍາວເກີນ 80 ຕົວ' }) staffName: string;
 
   /**
    * ຫຼາຍລາຍການໃນບິນດຽວ (ທີ່ລູກຄ້າຂໍ).
@@ -92,10 +93,10 @@ export class CreateOrderDto {
   lines?: OrderLineDto[];
 
   @IsOptional() @IsString() goldItemId?: string;
-  @IsOptional() @IsNumberString() weightG?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG?: string;
   @IsOptional() @IsInt() @Min(1) quantity?: number;
-  @IsNumberString() totalAmount: string;
-  @IsOptional() @IsString() note?: string;
+  @IsDecimalString({ labelLo: 'ຍອດລວມ' }) totalAmount: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 
   @ValidateNested()
   /** Superseded by `receipts`; accepted so an older client still works. */
@@ -135,7 +136,7 @@ export class UpdateOrderStatusDto {
   /** Required for COMPLETED — ວັນທີລູກຄ້າມາຮັບເຄື່ອງ. */
   @IsOptional() @IsDateString() customerPickupAt?: string;
 
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 export class ReceiveOrderDto {
@@ -143,7 +144,7 @@ export class ReceiveOrderDto {
   @IsOptional() @IsIn(['CASH', 'BANK']) method?: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsOptional() @IsIn(['LAK', 'THB', 'USD']) currency?: 'LAK' | 'THB' | 'USD';
-  @IsOptional() @IsNumberString() amount?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount?: string;
 
   /** Multi-leg form: ສົດ and ໂອນ, several currencies, one receipt. */
   @IsOptional()

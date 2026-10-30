@@ -3,15 +3,16 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsNumberString,
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 /**
  * ຕົວກອງຂອງລາຍການປະຫວັດ.
@@ -29,24 +30,24 @@ export class ListExchangeDto extends HistoryRangeDto {
 export class ExchangeOldLineDto {
   @IsString() goldTypeId: string;
   @IsOptional() @IsString() goldItemId?: string;
-  @IsNumberString() weightG: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
   @IsInt() @Min(1) quantity: number;
   /** ເກນນ້ຳໜັກ standard — the weight the piece left the shop at. */
-  @IsNumberString() standardWeightG: string;
+  @IsDecimalString({ labelLo: 'ເກນນ້ຳໜັກ' }) standardWeightG: string;
 }
 
 export class ExchangeNewLineDto {
   @IsString() goldSkuId: string;
   @IsOptional() @IsString() cabinetId?: string;
-  @IsNumberString() weightG: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
   @IsInt() @Min(1) quantity: number;
-  @IsOptional() @IsNumberString() humpFee?: string;
-  @IsOptional() @IsNumberString() barConvertFee?: string;
-  @IsOptional() @IsNumberString() patternFee?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຄ່າຄຳຫຍຸບ' }) humpFee?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຄ່າປ່ຽນຄຳແທ່ງ' }) barConvertFee?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຄ່າລາຍ' }) patternFee?: string;
 }
 
 export class ExchangeRemainingLineDto {
-  @IsNumberString() weightG: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
   @IsInt() @Min(1) quantity: number;
 }
 
@@ -55,7 +56,7 @@ export class ExchangePaymentLineDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
 }
 
 export class CreateExchangeDto {
@@ -95,5 +96,5 @@ export class PreviewExchangeDto extends CreateExchangeDto {}
 
 export class ReviewExchangeDto {
   @IsIn(['APPROVED', 'REJECTED']) decision: 'APPROVED' | 'REJECTED';
-  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsString() @MaxLength(300, { message: 'ເຫດຜົນຍາວເກີນ 300 ຕົວ' }) reason?: string;
 }

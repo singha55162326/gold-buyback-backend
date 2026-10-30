@@ -14,6 +14,7 @@ const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 const history_range_dto_1 = require("../../../common/dto/history-range.dto");
+const decimal_string_validator_1 = require("../../../common/dto/decimal-string.validator");
 class CreditReceiptDto {
     method;
     bankAccountId;
@@ -38,7 +39,7 @@ __decorate([
     __metadata("design:type", String)
 ], CreditReceiptDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], CreditReceiptDto.prototype, "amount", void 0);
 /**
@@ -70,7 +71,7 @@ __decorate([
 class ListCreditDto extends history_range_dto_1.HistoryRangeDto {
     status;
     static _OPENAPI_METADATA_FACTORY() {
-        return { status: { required: false, enum: ["PENDING", "APPROVED", "REJECTED", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] } };
+        return { status: { required: false, enum: ["APPROVED", "REJECTED", "PENDING", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] } };
     }
 }
 exports.ListCreditDto = ListCreditDto;
@@ -108,7 +109,7 @@ __decorate([
     __metadata("design:type", String)
 ], CreateCreditDto.prototype, "cabinetId", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກ' }),
     __metadata("design:type", String)
 ], CreateCreditDto.prototype, "weightG", void 0);
 __decorate([
@@ -117,11 +118,11 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateCreditDto.prototype, "quantity", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ລາຄາຂາຍ' }),
     __metadata("design:type", String)
 ], CreateCreditDto.prototype, "sellPrice", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ເງິນວາງດາວ' }),
     __metadata("design:type", String)
 ], CreateCreditDto.prototype, "downPayment", void 0);
 __decorate([
@@ -144,7 +145,7 @@ class ReviewCreditDto {
     decision;
     reason;
     static _OPENAPI_METADATA_FACTORY() {
-        return { decision: { required: true, enum: ["APPROVED", "REJECTED"], enum: ['APPROVED', 'REJECTED'] }, reason: { required: false, type: () => String } };
+        return { decision: { required: true, enum: ["APPROVED", "REJECTED"], enum: ['APPROVED', 'REJECTED'] }, reason: { required: false, type: () => String, maxLength: 300 } };
     }
 }
 exports.ReviewCreditDto = ReviewCreditDto;
@@ -155,6 +156,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(300, { message: 'ເຫດຜົນຍາວເກີນ 300 ຕົວ' }),
     __metadata("design:type", String)
 ], ReviewCreditDto.prototype, "reason", void 0);
 class ReceiveCreditDto {
@@ -187,7 +189,7 @@ __decorate([
 ], ReceiveCreditDto.prototype, "currency", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], ReceiveCreditDto.prototype, "amount", void 0);
 __decorate([

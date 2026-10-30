@@ -14,6 +14,7 @@ const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 const history_range_dto_1 = require("../../../common/dto/history-range.dto");
+const decimal_string_validator_1 = require("../../../common/dto/decimal-string.validator");
 /** §3.7 — Module ລາຍການ Bank */
 class CreateBankAccountDto {
     /** Ignored — the code is issued by CodeGeneratorService. */
@@ -135,7 +136,7 @@ __decorate([
     __metadata("design:type", String)
 ], IncomeExpenseLineDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], IncomeExpenseLineDto.prototype, "amount", void 0);
 /**
@@ -180,7 +181,7 @@ class CreateIncomeExpenseDto {
     payments;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { categoryId: { required: true, type: () => String }, method: { required: false, description: "Single-leg form, kept so an older client still works.", enum: ["CASH", "BANK"], enum: ['CASH', 'BANK'] }, bankAccountId: { required: false, type: () => String }, currency: { required: false, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: false, type: () => String }, payments: { required: false, type: () => [require("./finance.dto").IncomeExpenseLineDto], description: "Multi-leg form: one transaction paid part \u0EAA\u0EBB\u0E94, part \u0EC2\u0EAD\u0E99." }, note: { required: false, type: () => String } };
+        return { categoryId: { required: true, type: () => String }, method: { required: false, description: "Single-leg form, kept so an older client still works.", enum: ["CASH", "BANK"], enum: ['CASH', 'BANK'] }, bankAccountId: { required: false, type: () => String }, currency: { required: false, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: false, type: () => String }, payments: { required: false, type: () => [require("./finance.dto").IncomeExpenseLineDto], description: "Multi-leg form: one transaction paid part \u0EAA\u0EBB\u0E94, part \u0EC2\u0EAD\u0E99." }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateIncomeExpenseDto = CreateIncomeExpenseDto;
@@ -205,7 +206,7 @@ __decorate([
 ], CreateIncomeExpenseDto.prototype, "currency", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], CreateIncomeExpenseDto.prototype, "amount", void 0);
 __decorate([
@@ -218,6 +219,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateIncomeExpenseDto.prototype, "note", void 0);
 /** §3.7 — Module ຝາກສິນຄ້າ */
@@ -236,7 +238,7 @@ __decorate([
     __metadata("design:type", String)
 ], ConsignmentLineDto.prototype, "nameLo", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກ' }),
     __metadata("design:type", String)
 ], ConsignmentLineDto.prototype, "weightG", void 0);
 __decorate([
@@ -254,7 +256,7 @@ class CreateConsignmentDto {
     lines;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { billId: { required: true, type: () => String, description: "\u0E9B\u0EC9\u0EAD\u0E99\u0EA5\u0EB0\u0EAB\u0EB1\u0E94 \u2014 the shop's own bill reference.", pattern: "^\\d{6}$" }, phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, customerName: { required: true, type: () => String, minLength: 1 }, staffName: { required: true, type: () => String, minLength: 1 }, lines: { required: true, type: () => [require("./finance.dto").ConsignmentLineDto], minItems: 1 }, note: { required: false, type: () => String } };
+        return { billId: { required: true, type: () => String, description: "\u0E9B\u0EC9\u0EAD\u0E99\u0EA5\u0EB0\u0EAB\u0EB1\u0E94 \u2014 the shop's own bill reference.", pattern: "^\\d{6}$" }, phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, customerName: { required: true, type: () => String, minLength: 1, maxLength: 80 }, staffName: { required: true, type: () => String, minLength: 1, maxLength: 80 }, lines: { required: true, type: () => [require("./finance.dto").ConsignmentLineDto], minItems: 1 }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateConsignmentDto = CreateConsignmentDto;
@@ -268,11 +270,13 @@ __decorate([
 ], CreateConsignmentDto.prototype, "phone", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(80, { message: 'ຊື່ລູກຄ້າຍາວເກີນ 80 ຕົວ' }),
     (0, class_validator_1.MinLength)(1),
     __metadata("design:type", String)
 ], CreateConsignmentDto.prototype, "customerName", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(80, { message: 'ຊື່ພະນັກງານຍາວເກີນ 80 ຕົວ' }),
     (0, class_validator_1.MinLength)(1),
     __metadata("design:type", String)
 ], CreateConsignmentDto.prototype, "staffName", void 0);
@@ -286,6 +290,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateConsignmentDto.prototype, "note", void 0);
 /** §9.1 — Module ລາຍການ AP-AR (Cash) */
@@ -355,7 +360,7 @@ class CreateApArCashEntryDto {
     amount;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { partnerId: { required: true, type: () => String }, categoryId: { required: true, type: () => String }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String } };
+        return { partnerId: { required: true, type: () => String }, categoryId: { required: true, type: () => String }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateApArCashEntryDto = CreateApArCashEntryDto;
@@ -372,12 +377,13 @@ __decorate([
     __metadata("design:type", String)
 ], CreateApArCashEntryDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], CreateApArCashEntryDto.prototype, "amount", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateApArCashEntryDto.prototype, "note", void 0);
 /** §9.3 / §9.4 — ປຸ່ມ Payment */
@@ -389,7 +395,7 @@ class SettleApArCashDto {
     amount;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { partnerId: { required: true, type: () => String }, method: { required: true, enum: ["CASH", "BANK"], enum: ['CASH', 'BANK'] }, bankAccountId: { required: false, type: () => String }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String } };
+        return { partnerId: { required: true, type: () => String }, method: { required: true, enum: ["CASH", "BANK"], enum: ['CASH', 'BANK'] }, bankAccountId: { required: false, type: () => String }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.SettleApArCashDto = SettleApArCashDto;
@@ -411,12 +417,13 @@ __decorate([
     __metadata("design:type", String)
 ], SettleApArCashDto.prototype, "currency", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], SettleApArCashDto.prototype, "amount", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], SettleApArCashDto.prototype, "note", void 0);
 //# sourceMappingURL=finance.dto.js.map

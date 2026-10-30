@@ -3,15 +3,16 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsNumberString,
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 export class BuybackPaymentLineDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
@@ -21,7 +22,7 @@ export class BuybackPaymentLineDto {
 
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
 
-  @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' })
   amount: string;
 }
 
@@ -30,17 +31,17 @@ export class BuybackLineDto {
   @IsString() goldTypeId: string;
   @IsOptional() @IsString() goldItemId?: string;
 
-  @IsNumberString({}, { message: 'ນ້ຳໜັກຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' })
   weightG: string;
 
   @IsInt() @Min(1, { message: 'ຈຳນວນຕ້ອງຢ່າງໜ້ອຍ 1' })
   quantity: number;
 
   /** %ຄຳ — ບັງຄັບສຳລັບ ຄຳຕົ້ມ (OTHER_SHOP). */
-  @IsOptional() @IsNumberString() goldPercent?: string;
+  @IsOptional() @IsDecimalString({ labelLo: '%ຄຳ', max: 100 }) goldPercent?: string;
 
   /** ຄ່າອ່ອນ / ຄ່າຫັກ ຕໍ່ໜ່ວຍ. */
-  @IsOptional() @IsNumberString() deduction?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຄ່າອ່ອນ / ຄ່າຫັກ' }) deduction?: string;
 }
 
 export class CreateBuybackDto {
@@ -67,17 +68,17 @@ export class CreateBuybackDto {
 
   @IsOptional() @IsString() goldItemId?: string;
 
-  @IsOptional() @IsNumberString({}, { message: 'ນ້ຳໜັກຕ້ອງເປັນຕົວເລກ' })
+  @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' })
   weightG?: string;
 
   @IsOptional() @IsInt() @Min(1, { message: 'ຈຳນວນຕ້ອງຢ່າງໜ້ອຍ 1' })
   quantity?: number;
 
   /** %ຄຳ — required for ຄຳຕົ້ມ (OTHER_SHOP). */
-  @IsOptional() @IsNumberString() goldPercent?: string;
+  @IsOptional() @IsDecimalString({ labelLo: '%ຄຳ', max: 100 }) goldPercent?: string;
 
   /** ຄ່າອ່ອນ / ຄ່າຫັກ per piece. */
-  @IsOptional() @IsNumberString() deduction?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຄ່າອ່ອນ / ຄ່າຫັກ' }) deduction?: string;
 
   @IsArray()
   @ArrayMinSize(1, { message: 'ຕ້ອງມີລາຍການຈ່າຍເງິນຢ່າງໜ້ອຍ 1 ລາຍການ' })
@@ -111,13 +112,13 @@ export class PreviewBuybackDto {
   lines?: BuybackLineDto[];
 
   @IsOptional() @IsString() goldTypeId?: string;
-  @IsOptional() @IsNumberString() weightG?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG?: string;
   @IsOptional() @IsInt() @Min(1) quantity?: number;
-  @IsOptional() @IsNumberString() goldPercent?: string;
-  @IsOptional() @IsNumberString() deduction?: string;
+  @IsOptional() @IsDecimalString({ labelLo: '%ຄຳ', max: 100 }) goldPercent?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຄ່າອ່ອນ / ຄ່າຫັກ' }) deduction?: string;
 }
 
 export class ReviewBuybackDto {
   @IsIn(['APPROVED', 'REJECTED']) decision: 'APPROVED' | 'REJECTED';
-  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsString() @MaxLength(300, { message: 'ເຫດຜົນຍາວເກີນ 300 ຕົວ' }) reason?: string;
 }

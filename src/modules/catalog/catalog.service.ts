@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CodeGeneratorService } from '../../common/services/code-generator.service';
@@ -42,6 +47,23 @@ export class CatalogService {
     }
   }
 
+  /**
+   * ຊື່ຊ້ຳກັນໃນລາຍການເລືອກ = ພະນັກງານເລືອກຜິດແຖວ ແລ້ວຍອດໄປຜິດບ່ອນ.
+   *
+   * ກວດສະເພາະແຖວທີ່ຍັງບໍ່ຖືກລຶບ: ຊື່ທີ່ເຄີຍລຶບໄປແລ້ວ ເອົາມາໃຊ້ຄືນໄດ້.
+   */
+  private async assertNameFree(
+    model: { findFirst(args: unknown): Promise<unknown> },
+    nameLo: string,
+    labelLo: string,
+  ): Promise<void> {
+    const existing = await model.findFirst({
+      where: { nameLo: { equals: nameLo.trim(), mode: 'insensitive' }, deletedAt: null },
+      select: { id: true },
+    });
+    if (existing) throw new ConflictException(`${labelLo} "${nameLo.trim()}" ມີຢູ່ແລ້ວ`);
+  }
+
   // --- ປະເພດຄຳ -------------------------------------------------------------
 
   /**
@@ -57,6 +79,7 @@ export class CatalogService {
   }
 
   async createGoldType(data: { nameLo: string; isStockType?: boolean }, actorId: string) {
+    await this.assertNameFree(this.prisma.goldType as never, data.nameLo, 'ປະເພດຄຳ');
     const max = await this.prisma.goldType.aggregate({ _max: { sortOrder: true } });
     const code = await this.codes.nextFor('GOLD_TYPE', this.prisma.goldType);
     const created = await this.prisma.goldType.create({
@@ -85,6 +108,7 @@ export class CatalogService {
   }
 
   async createGoldItem(data: { nameLo: string }, actorId: string) {
+    await this.assertNameFree(this.prisma.goldItem as never, data.nameLo, 'ລາຍການຄຳ');
     const max = await this.prisma.goldItem.aggregate({ _max: { sortOrder: true } });
     const code = await this.codes.nextFor('GOLD_ITEM', this.prisma.goldItem);
     const created = await this.prisma.goldItem.create({
@@ -112,6 +136,7 @@ export class CatalogService {
   }
 
   async createCabinet(data: { nameLo: string }, actorId: string) {
+    await this.assertNameFree(this.prisma.cabinet as never, data.nameLo, 'ຕູ້ເຄື່ອງ');
     const code = await this.codes.nextFor('CABINET', this.prisma.cabinet);
     const created = await this.prisma.cabinet.create({
       data: { code, nameLo: data.nameLo.trim() },
@@ -173,6 +198,7 @@ export class CatalogService {
     data: { nameLo: string; direction: 'IN' | 'OUT' | 'BOTH'; tracksGoldApAr?: boolean },
     actorId: string,
   ) {
+    await this.assertNameFree(this.prisma.partnerSource as never, data.nameLo, 'ແຫຼ່ງ');
     const max = await this.prisma.partnerSource.aggregate({ _max: { sortOrder: true } });
     const code = await this.codes.nextFor('PARTNER', this.prisma.partnerSource);
     const created = await this.prisma.partnerSource.create({

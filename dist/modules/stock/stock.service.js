@@ -272,14 +272,21 @@ let StockService = class StockService {
             after: { code: movement.code, totalGoldG: totalGoldG.toFixed() },
             summary: `ຮ້ອງຂໍ Stock OUT ${movement.code} — ${totalGoldG.toFixed()} g ໄປ ${partner.nameLo}`,
         });
-        await this.notifications.notify({
-            kind: 'STOCK_OUT_APPROVAL',
-            recipientRole: 'ADMIN',
-            title: 'ມີ Stock OUT ລໍຖ້າອະນຸມັດ',
-            body: `${movement.code} — ${totalGoldG.toFixed()} g ໄປ ${partner.nameLo}`,
-            refType: 'StockMovement',
-            refId: movement.id,
-        });
+        /*
+         * ທັງ Admin ແລະ Manager ອະນຸມັດ Stock OUT ໄດ້ (TOR §7.2) ແຕ່ການແຈ້ງເຕືອນ
+         * ຮັບໄດ້ Role ດຽວຕໍ່ແຖວ — ສົ່ງສອງແຖວ, ບໍ່ດັ່ງນັ້ນ Manager ຈະບໍ່ເຫັນກະດິ່ງ
+         * ແລະ ລາຍການຈະຄ້າງລໍຖ້າໂດຍບໍ່ມີໃຜຮູ້.
+         */
+        for (const recipientRole of ['ADMIN', 'MANAGER']) {
+            await this.notifications.notify({
+                kind: 'STOCK_OUT_APPROVAL',
+                recipientRole,
+                title: 'ມີ Stock OUT ລໍຖ້າອະນຸມັດ',
+                body: `${movement.code} — ${totalGoldG.toFixed()} g ໄປ ${partner.nameLo}`,
+                refType: 'StockMovement',
+                refId: movement.id,
+            });
+        }
         return movement;
     }
     /**
@@ -892,6 +899,16 @@ let StockService = class StockService {
         this.approval.assertTransition(handover.status, next);
         const day = await this.businessDay.current();
         return this.prisma.$transaction(async (tx) => {
+            /*
+             * ປະຕິເສດແລ້ວ ລາຍການຄຳຕົ້ມຕ້ອງກັບໄປຢູ່ "ລໍຖ້າມອບ" ເພື່ອມອບໃໝ່ໄດ້.
+             *
+             * "ຍັງບໍ່ໄດ້ມອບ" ອ່ານຈາກການບໍ່ມີ GoldHandoverItem ແລະ `buybackId` ເປັນ
+             * unique — ຖ້າປະແຖວນັ້ນໄວ້ ຄຳຈະຄ້າງ: ມອບຄືນບໍ່ໄດ້ຕະຫຼອດໄປ. ຫົວບິນການ
+             * ມອບຍັງຢູ່ຄົບ (ລະຫັດ, ສະຖານະ, ເຫດຜົນ, ນ້ຳໜັກ) ສຳລັບການກວດສອບ.
+             */
+            if (dto.decision === 'REJECTED') {
+                await tx.goldHandoverItem.deleteMany({ where: { handoverId: id } });
+            }
             const updated = await tx.goldHandover.update({
                 where: { id },
                 data: {

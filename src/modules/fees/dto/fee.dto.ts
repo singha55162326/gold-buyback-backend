@@ -1,23 +1,29 @@
-import { IsIn, IsNumberString, IsOptional, IsString } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 /** ຄ່າປ່ຽນຮູບປະພັນ — TOR §3.4 */
 export class UpsertJewelryFeeDto {
   @IsString() tierCode: string;
-  @IsNumberString() weightG: string;
-  @IsNumberString() feeGoodShape: string;
-  @IsNumberString() feeDamagedShape: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
+  @IsDecimalString({ labelLo: 'ຄ່າປ່ຽນ (ຮູບຊົງດີ)' }) feeGoodShape: string;
+  @IsDecimalString({ labelLo: 'ຄ່າປ່ຽນ (ຮູບຊົງເພ)' }) feeDamagedShape: string;
 }
 
 /** ຄ່າປ່ຽນຄຳແທ່ງ — TOR §3.4 */
 export class UpsertBarFeeDto {
-  @IsNumberString() weightG: string;
-  @IsNumberString() barToJewelry: string;
-  @IsNumberString() barToBar: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
+  @IsDecimalString({ labelLo: 'ຄ່າປ່ຽນ ແທ່ງ → ຮູບປະພັນ' }) barToJewelry: string;
+  @IsDecimalString({ labelLo: 'ຄ່າປ່ຽນ ແທ່ງ → ແທ່ງ' }) barToBar: string;
 }
 
 /** ຄ່າອ່ອນ — TOR §3.4 */
 export class UpdateSoftGoldFeeDto {
-  @IsNumberString({}, { message: 'ຄ່າຄຳອ່ອນຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'ຄ່າ' })
   value: string;
 }
 
@@ -25,6 +31,6 @@ export class UpdateSoftGoldFeeDto {
 export class UpdateDeductionDto {
   @IsString() tierCode: string;
   @IsIn(['PERCENT', 'AMOUNT']) kind: 'PERCENT' | 'AMOUNT';
-  @IsNumberString() value: string;
-  @IsOptional() @IsString() note?: string;
+  @IsDecimalString({ labelLo: 'ຄ່າ' }) value: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
