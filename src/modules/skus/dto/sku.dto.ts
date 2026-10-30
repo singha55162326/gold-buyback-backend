@@ -1,4 +1,5 @@
-import { IsBoolean, IsNumberString, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 export class CreateSkuDto {
   @IsString()
@@ -11,7 +12,7 @@ export class CreateSkuDto {
   nameLo: string;
 
   /** ນ້ຳໜັກ (g). String to preserve DECIMAL(18,4) precision. */
-  @IsNumberString({ no_symbols: false }, { message: 'ນ້ຳໜັກຕ້ອງເປັນຕົວເລກ' })
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' })
   weightG: string;
 }
 
@@ -22,7 +23,7 @@ export class UpdateSkuDto {
   nameLo?: string;
 
   @IsOptional()
-  @IsNumberString()
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' })
   weightG?: string;
 
   @IsOptional()

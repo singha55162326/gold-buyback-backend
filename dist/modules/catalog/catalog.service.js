@@ -49,6 +49,19 @@ let CatalogService = class CatalogService {
             throw new common_1.BadRequestException(`ລຶບ${labelLo}ນີ້ບໍ່ໄດ້ — ຖືກໃຊ້ຢູ່ໃນ ${used.join(', ')}. ປິດການນຳໃຊ້ແທນ.`);
         }
     }
+    /**
+     * ຊື່ຊ້ຳກັນໃນລາຍການເລືອກ = ພະນັກງານເລືອກຜິດແຖວ ແລ້ວຍອດໄປຜິດບ່ອນ.
+     *
+     * ກວດສະເພາະແຖວທີ່ຍັງບໍ່ຖືກລຶບ: ຊື່ທີ່ເຄີຍລຶບໄປແລ້ວ ເອົາມາໃຊ້ຄືນໄດ້.
+     */
+    async assertNameFree(model, nameLo, labelLo) {
+        const existing = await model.findFirst({
+            where: { nameLo: { equals: nameLo.trim(), mode: 'insensitive' }, deletedAt: null },
+            select: { id: true },
+        });
+        if (existing)
+            throw new common_1.ConflictException(`${labelLo} "${nameLo.trim()}" ມີຢູ່ແລ້ວ`);
+    }
     // --- ປະເພດຄຳ -------------------------------------------------------------
     /**
      * `withActor` ແປະຊື່ຜູ້ບັນທຶກໃສ່ແຕ່ລະແຖວ — ເປີດໃຊ້ແຕ່ໜ້າ Admin ທີ່ສະແດງ
@@ -62,6 +75,7 @@ let CatalogService = class CatalogService {
         return withActor ? this.audit.withCreatorsFromAudit('GoldType', rows) : rows;
     }
     async createGoldType(data, actorId) {
+        await this.assertNameFree(this.prisma.goldType, data.nameLo, 'ປະເພດຄຳ');
         const max = await this.prisma.goldType.aggregate({ _max: { sortOrder: true } });
         const code = await this.codes.nextFor('GOLD_TYPE', this.prisma.goldType);
         const created = await this.prisma.goldType.create({
@@ -87,6 +101,7 @@ let CatalogService = class CatalogService {
         return withActor ? this.audit.withCreatorsFromAudit('GoldItem', rows) : rows;
     }
     async createGoldItem(data, actorId) {
+        await this.assertNameFree(this.prisma.goldItem, data.nameLo, 'ລາຍການຄຳ');
         const max = await this.prisma.goldItem.aggregate({ _max: { sortOrder: true } });
         const code = await this.codes.nextFor('GOLD_ITEM', this.prisma.goldItem);
         const created = await this.prisma.goldItem.create({
@@ -111,6 +126,7 @@ let CatalogService = class CatalogService {
         return withActor ? this.audit.withCreatorsFromAudit('Cabinet', rows) : rows;
     }
     async createCabinet(data, actorId) {
+        await this.assertNameFree(this.prisma.cabinet, data.nameLo, 'ຕູ້ເຄື່ອງ');
         const code = await this.codes.nextFor('CABINET', this.prisma.cabinet);
         const created = await this.prisma.cabinet.create({
             data: { code, nameLo: data.nameLo.trim() },
@@ -160,6 +176,7 @@ let CatalogService = class CatalogService {
         return withActor ? this.audit.withCreatorsFromAudit('PartnerSource', rows) : rows;
     }
     async createPartner(data, actorId) {
+        await this.assertNameFree(this.prisma.partnerSource, data.nameLo, 'ແຫຼ່ງ');
         const max = await this.prisma.partnerSource.aggregate({ _max: { sortOrder: true } });
         const code = await this.codes.nextFor('PARTNER', this.prisma.partnerSource);
         const created = await this.prisma.partnerSource.create({

@@ -50,7 +50,22 @@ let FinanceService = class FinanceService {
     /* ---------------------------------------------------------------- *
      * §3.7 — Module ລາຍການ Bank
      * ---------------------------------------------------------------- */
+    /**
+     * ຊື່ຊ້ຳໃນລາຍການເລືອກ = ເລືອກຜິດແຖວ ແລ້ວຍອດໄປຜິດບ່ອນ.
+     *
+     * `scope` ຕ່າງກັນຕາມຕາຕະລາງ: ສ່ວນໃຫຍ່ລຶບແບບ soft (`deletedAt`) ແຕ່ບັນຊີ
+     * ທະນາຄານບໍ່ມີຖັນນັ້ນ ຈຶ່ງກວດທຸກແຖວ.
+     */
+    async assertNameFree(model, nameLo, labelLo, scope = { deletedAt: null }) {
+        const existing = await model.findFirst({
+            where: { nameLo: { equals: nameLo.trim(), mode: 'insensitive' }, ...scope },
+            select: { id: true },
+        });
+        if (existing)
+            throw new common_1.ConflictException(`${labelLo} "${nameLo.trim()}" ມີຢູ່ແລ້ວ`);
+    }
     async createBankAccount(dto, user) {
+        await this.assertNameFree(this.prisma.bankAccount, dto.nameLo, 'ບັນຊີທະນາຄານ', {});
         const max = await this.prisma.bankAccount.aggregate({ _max: { sortOrder: true } });
         const code = await this.codes.nextFor('BANK', this.prisma.bankAccount);
         const created = await this.prisma.bankAccount.create({
@@ -80,6 +95,7 @@ let FinanceService = class FinanceService {
     }
     async createIncomeExpenseCategory(dto, user) {
         const max = await this.prisma.incomeExpenseCategory.aggregate({ _max: { sortOrder: true } });
+        await this.assertNameFree(this.prisma.incomeExpenseCategory, dto.nameLo, 'ໝວດຮັບຈ່າຍ');
         const code = await this.codes.nextFor('INCOME_EXPENSE_CATEGORY', this.prisma.incomeExpenseCategory);
         const created = await this.prisma.incomeExpenseCategory.create({
             data: {
@@ -341,6 +357,7 @@ let FinanceService = class FinanceService {
     }
     async createApArCategory(dto, user) {
         const max = await this.prisma.apArCashCategory.aggregate({ _max: { sortOrder: true } });
+        await this.assertNameFree(this.prisma.apArCashCategory, dto.nameLo, 'ປະເພດລາຍການ AP-AR');
         const code = await this.codes.nextFor('APAR_CASH_CATEGORY', this.prisma.apArCashCategory);
         const created = await this.prisma.apArCashCategory.create({
             data: {

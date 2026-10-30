@@ -14,6 +14,7 @@ const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 const history_range_dto_1 = require("../../../common/dto/history-range.dto");
+const decimal_string_validator_1 = require("../../../common/dto/decimal-string.validator");
 class StockLineDto {
     /** Stock (NEW) lines reference a SKU. */
     goldSkuId;
@@ -51,7 +52,7 @@ __decorate([
     __metadata("design:type", String)
 ], StockLineDto.prototype, "oldCategory", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກ' }),
     __metadata("design:type", String)
 ], StockLineDto.prototype, "weightG", void 0);
 __decorate([
@@ -73,7 +74,7 @@ class CreateStockInDto {
     laborFeeThb;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { scope: { required: true, enum: ["NEW", "OLD"], enum: ['NEW', 'OLD'] }, partnerId: { required: false, type: () => String, description: "Stock (NEW) \u0EC0\u0E97\u0EBB\u0EC8\u0EB2\u0E99\u0EB1\u0EC9\u0E99 \u2014 \u0E84\u0EB3\u0EC0\u0E81\u0EBB\u0EC8\u0EB2\u0EC0\u0E82\u0EBB\u0EC9\u0EB2\u0EAA\u0EB2\u0E87 \u0EC1\u0EA1\u0EC8\u0E99 Cashier \u0EAA\u0EB0\u0EC0\u0EDD\u0EB5." }, lines: { required: true, type: () => [require("./stock.dto").StockLineDto], minItems: 1 }, totalCost: { required: true, type: () => String, description: "\u0E95\u0EBB\u0EC9\u0E99\u0E97\u0EB6\u0E99\u0E84\u0ECD\u0EB2 for the whole movement." }, laborFeeThb: { required: false, type: () => String, description: "\u0E84\u0EC8\u0EB2\u0EC1\u0EAE\u0E87 (THB) \u2014 becomes an AP (Cash) liability.\nStock (NEW) \u0EC0\u0E97\u0EBB\u0EC8\u0EB2\u0E99\u0EB1\u0EC9\u0E99; \u0E84\u0EB3\u0EC0\u0E81\u0EBB\u0EC8\u0EB2\u0EAE\u0EB1\u0E9A\u0EA1\u0EB2\u0E88\u0EB2\u0E81 Cashier \u0E9A\u0ECD\u0EC8\u0EA1\u0EB5\u0E84\u0EC8\u0EB2\u0EC1\u0EAE\u0E87." }, note: { required: false, type: () => String } };
+        return { scope: { required: true, enum: ["NEW", "OLD"], enum: ['NEW', 'OLD'] }, partnerId: { required: false, type: () => String, description: "Stock (NEW) \u0EC0\u0E97\u0EBB\u0EC8\u0EB2\u0E99\u0EB1\u0EC9\u0E99 \u2014 \u0E84\u0EB3\u0EC0\u0E81\u0EBB\u0EC8\u0EB2\u0EC0\u0E82\u0EBB\u0EC9\u0EB2\u0EAA\u0EB2\u0E87 \u0EC1\u0EA1\u0EC8\u0E99 Cashier \u0EAA\u0EB0\u0EC0\u0EDD\u0EB5." }, lines: { required: true, type: () => [require("./stock.dto").StockLineDto], minItems: 1 }, totalCost: { required: true, type: () => String, description: "\u0E95\u0EBB\u0EC9\u0E99\u0E97\u0EB6\u0E99\u0E84\u0ECD\u0EB2 for the whole movement." }, laborFeeThb: { required: false, type: () => String, description: "\u0E84\u0EC8\u0EB2\u0EC1\u0EAE\u0E87 (THB) \u2014 becomes an AP (Cash) liability.\nStock (NEW) \u0EC0\u0E97\u0EBB\u0EC8\u0EB2\u0E99\u0EB1\u0EC9\u0E99; \u0E84\u0EB3\u0EC0\u0E81\u0EBB\u0EC8\u0EB2\u0EAE\u0EB1\u0E9A\u0EA1\u0EB2\u0E88\u0EB2\u0E81 Cashier \u0E9A\u0ECD\u0EC8\u0EA1\u0EB5\u0E84\u0EC8\u0EB2\u0EC1\u0EAE\u0E87." }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateStockInDto = CreateStockInDto;
@@ -94,17 +95,18 @@ __decorate([
     __metadata("design:type", Array)
 ], CreateStockInDto.prototype, "lines", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຕົ້ນທຶນຄຳ' }),
     __metadata("design:type", String)
 ], CreateStockInDto.prototype, "totalCost", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຄ່າແຮງ' }),
     __metadata("design:type", String)
 ], CreateStockInDto.prototype, "laborFeeThb", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateStockInDto.prototype, "note", void 0);
 class CreateStockOutDto {
@@ -118,7 +120,7 @@ class CreateStockOutDto {
     lines;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { scope: { required: true, enum: ["NEW", "OLD"], enum: ['NEW', 'OLD'] }, partnerId: { required: true, type: () => String }, cabinetId: { required: false, type: () => String }, transformType: { required: false, description: "\u0EC1\u0E9B\u0E87\u0EAA\u0EB0\u0E9E\u0EB2\u0E9A \u2014 \u0E8D\u0EC9\u0EAD\u0EA1 / \u0E81\u0EB1\u0E94 / \u0EAB\u0EBC\u0EAD\u0EA1.", enum: ["DYE", "ETCH", "MELT"], enum: ['DYE', 'ETCH', 'MELT'] }, goldPercent: { required: false, type: () => String, description: "%\u0E84\u0EB3 \u2014 for OUT to \u0E8A\u0EC8\u0EB2\u0E87\u0E99\u0EAD\u0E81 / \u0EAD\u0EB7\u0EC8\u0E99\u0EC6." }, lines: { required: true, type: () => [require("./stock.dto").StockLineDto], minItems: 1 }, note: { required: false, type: () => String } };
+        return { scope: { required: true, enum: ["NEW", "OLD"], enum: ['NEW', 'OLD'] }, partnerId: { required: true, type: () => String }, cabinetId: { required: false, type: () => String }, transformType: { required: false, description: "\u0EC1\u0E9B\u0E87\u0EAA\u0EB0\u0E9E\u0EB2\u0E9A \u2014 \u0E8D\u0EC9\u0EAD\u0EA1 / \u0E81\u0EB1\u0E94 / \u0EAB\u0EBC\u0EAD\u0EA1.", enum: ["DYE", "ETCH", "MELT"], enum: ['DYE', 'ETCH', 'MELT'] }, goldPercent: { required: false, type: () => String, description: "%\u0E84\u0EB3 \u2014 for OUT to \u0E8A\u0EC8\u0EB2\u0E87\u0E99\u0EAD\u0E81 / \u0EAD\u0EB7\u0EC8\u0E99\u0EC6." }, lines: { required: true, type: () => [require("./stock.dto").StockLineDto], minItems: 1 }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateStockOutDto = CreateStockOutDto;
@@ -142,7 +144,7 @@ __decorate([
 ], CreateStockOutDto.prototype, "transformType", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: '%ຄຳ', max: 100 }),
     __metadata("design:type", String)
 ], CreateStockOutDto.prototype, "goldPercent", void 0);
 __decorate([
@@ -155,6 +157,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateStockOutDto.prototype, "note", void 0);
 class CreateTransferDto {
@@ -164,7 +167,7 @@ class CreateTransferDto {
     lines;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { direction: { required: true, enum: ["NEW_TO_OLD", "OLD_TO_NEW"], enum: ['NEW_TO_OLD', 'OLD_TO_NEW'] }, goldTypeId: { required: true, type: () => String, description: "The \u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3 bucket on the OLD side of the transfer." }, lines: { required: true, type: () => [require("./stock.dto").StockLineDto], minItems: 1 }, note: { required: false, type: () => String } };
+        return { direction: { required: true, enum: ["NEW_TO_OLD", "OLD_TO_NEW"], enum: ['NEW_TO_OLD', 'OLD_TO_NEW'] }, goldTypeId: { required: true, type: () => String, description: "The \u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3 bucket on the OLD side of the transfer." }, lines: { required: true, type: () => [require("./stock.dto").StockLineDto], minItems: 1 }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateTransferDto = CreateTransferDto;
@@ -186,13 +189,14 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateTransferDto.prototype, "note", void 0);
 class ReviewStockDto {
     decision;
     reason;
     static _OPENAPI_METADATA_FACTORY() {
-        return { decision: { required: true, enum: ["APPROVED", "REJECTED"], enum: ['APPROVED', 'REJECTED'] }, reason: { required: false, type: () => String } };
+        return { decision: { required: true, enum: ["APPROVED", "REJECTED"], enum: ['APPROVED', 'REJECTED'] }, reason: { required: false, type: () => String, maxLength: 300 } };
     }
 }
 exports.ReviewStockDto = ReviewStockDto;
@@ -203,6 +207,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(300, { message: 'ເຫດຜົນຍາວເກີນ 300 ຕົວ' }),
     __metadata("design:type", String)
 ], ReviewStockDto.prototype, "reason", void 0);
 class FactoryAssessmentDto {
@@ -213,7 +218,7 @@ class FactoryAssessmentDto {
 }
 exports.FactoryAssessmentDto = FactoryAssessmentDto;
 __decorate([
-    (0, class_validator_1.IsNumberString)({}, { message: 'ນ້ຳໜັກຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກທີ່ FACTORY ປະເມີນ' }),
     __metadata("design:type", String)
 ], FactoryAssessmentDto.prototype, "factoryAssessedG", void 0);
 /**
@@ -238,7 +243,7 @@ class HandoverQueryDto extends history_range_dto_1.HistoryRangeDto {
     /** ຄົ້ນຫາ ລະຫັດ / ລາຍການ / ຜູ້ມອບ. */
     q;
     static _OPENAPI_METADATA_FACTORY() {
-        return { status: { required: false, enum: ["PENDING", "APPROVED", "REJECTED", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] }, goldTypeId: { required: false, type: () => String, description: "\u0E81\u0EAD\u0E87\u0E95\u0EB2\u0EA1\u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3." }, q: { required: false, type: () => String, description: "\u0E84\u0EBB\u0EC9\u0E99\u0EAB\u0EB2 \u0EA5\u0EB0\u0EAB\u0EB1\u0E94 / \u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99 / \u0E9C\u0EB9\u0EC9\u0EA1\u0EAD\u0E9A." } };
+        return { status: { required: false, enum: ["APPROVED", "REJECTED", "PENDING", "COMPLETED", "CANCELLED"], enum: ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] }, goldTypeId: { required: false, type: () => String, description: "\u0E81\u0EAD\u0E87\u0E95\u0EB2\u0EA1\u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3." }, q: { required: false, type: () => String, description: "\u0E84\u0EBB\u0EC9\u0E99\u0EAB\u0EB2 \u0EA5\u0EB0\u0EAB\u0EB1\u0E94 / \u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99 / \u0E9C\u0EB9\u0EC9\u0EA1\u0EAD\u0E9A.", maxLength: 100 } };
     }
 }
 exports.HandoverQueryDto = HandoverQueryDto;
@@ -255,6 +260,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(100, { message: 'ຄຳຄົ້ນຫາຍາວເກີນ 100 ຕົວ' }),
     __metadata("design:type", String)
 ], HandoverQueryDto.prototype, "q", void 0);
 /** ໜຶ່ງປະເພດຄຳໃນຮອບດຽວ — ຮອບໜຶ່ງມອບໄດ້ ຄຳດີ + ຄຳຫຍຸບ + ແທ່ງ ພ້ອມກັນ. */
@@ -276,17 +282,17 @@ __decorate([
     __metadata("design:type", String)
 ], HandoverTypeLineDto.prototype, "goldTypeId", void 0);
 __decorate([
-    (0, class_validator_1.IsNumberString)({}, { message: 'ນ້ຳໜັກລວມອອກຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກລວມອອກ' }),
     __metadata("design:type", String)
 ], HandoverTypeLineDto.prototype, "outWeightG", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)({}, { message: 'ເນື້ອລ້ວນຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ເນື້ອລ້ວນ' }),
     __metadata("design:type", String)
 ], HandoverTypeLineDto.prototype, "pureWeightG", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)({}, { message: 'ນ້ຳໜັກມີແກ້ວຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກມີແກ້ວ' }),
     __metadata("design:type", String)
 ], HandoverTypeLineDto.prototype, "glassWeightG", void 0);
 class CreateHandoverDto {
@@ -309,7 +315,7 @@ class CreateHandoverDto {
     weightG;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { goldTypeId: { required: false, type: () => String, description: "\u0E9A\u0EB1\u0E87\u0E84\u0EB1\u0E9A\u0EAA\u0EB3\u0EA5\u0EB1\u0E9A \u0E84\u0EB3\u0E95\u0EBB\u0EC9\u0EA1 \u0EC1\u0EA5\u0EB0 \u0EAE\u0EB9\u0E9A\u0EC1\u0E9A\u0E9A\u0EC1\u0E96\u0EA7\u0E94\u0EBD\u0EA7\u0EC0\u0E81\u0EBB\u0EC8\u0EB2; \u0EAE\u0EAD\u0E9A\u0EAB\u0EBC\u0EB2\u0E8D\u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0EC3\u0E8A\u0EC9 `lines`." }, lines: { required: false, type: () => [require("./stock.dto").HandoverTypeLineDto], description: "\u0EAE\u0EAD\u0E9A\u0E94\u0EBD\u0EA7 \u0EAB\u0EBC\u0EB2\u0E8D\u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3 \u2014 \u0E97\u0EB8\u0E81\u0EC1\u0E96\u0EA7\u0EC4\u0E94\u0EC9 \u0EAE\u0EAD\u0E9A\u0E97\u0EB5 \u0EAD\u0EB1\u0E99\u0E94\u0EBD\u0EA7\u0E81\u0EB1\u0E99.", minItems: 1 }, grossWeightG: { required: false, type: () => String, description: "\u0E99\u0EC9\u0EB3\u0EDC\u0EB1\u0E81\u0EAD\u0EAD\u0E81 \u2014 \u0E9A\u0EB1\u0E87\u0E84\u0EB1\u0E9A\u0EAA\u0EB3\u0EA5\u0EB1\u0E9A \u0E84\u0EB3\u0E94\u0EB5/\u0E84\u0EB3\u0EAB\u0E8D\u0EB8\u0E9A/\u0EC1\u0E97\u0EC8\u0E87." }, pureWeightG: { required: false, type: () => String, description: "\u0EC0\u0E99\u0EB7\u0EC9\u0EAD\u0EA5\u0EC9\u0EA7\u0E99." }, glassWeightG: { required: false, type: () => String, description: "\u0EA1\u0EB5\u0EC1\u0E81\u0EC9\u0EA7." }, buybackIds: { required: false, type: () => [String], description: "\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99 Buyback \u0E84\u0EB3\u0E95\u0EBB\u0EC9\u0EA1 \u0E97\u0EB5\u0EC8\u0EA1\u0EAD\u0E9A\u0EC3\u0E99\u0EAE\u0EAD\u0E9A\u0E99\u0EB5\u0EC9.", minItems: 1 }, weightG: { required: false, type: () => String, description: "\u0EAE\u0EB9\u0E9A\u0EC1\u0E9A\u0E9A\u0EC0\u0E81\u0EBB\u0EC8\u0EB2: \u0E99\u0EC9\u0EB3\u0EDC\u0EB1\u0E81\u0E81\u0EC9\u0EAD\u0E99\u0E94\u0EBD\u0EA7. \u0E8D\u0EB1\u0E87\u0EAE\u0EB1\u0E9A\u0EC4\u0EA7\u0EC9\u0EC0\u0E9E\u0EB7\u0EC8\u0EAD\u0E9A\u0ECD\u0EC8\u0EC3\u0EAB\u0EC9 client \u0EC0\u0E81\u0EBB\u0EC8\u0EB2\u0E9E\u0EB1\u0E87,\n\u0EC1\u0E95\u0EC8\u0E9F\u0EAD\u0EA1\u0EC3\u0EDD\u0EC8\u0EAA\u0EBB\u0EC8\u0E87 grossWeightG \u0EA1\u0EB2\u0EC1\u0E97\u0E99." }, note: { required: false, type: () => String } };
+        return { goldTypeId: { required: false, type: () => String, description: "\u0E9A\u0EB1\u0E87\u0E84\u0EB1\u0E9A\u0EAA\u0EB3\u0EA5\u0EB1\u0E9A \u0E84\u0EB3\u0E95\u0EBB\u0EC9\u0EA1 \u0EC1\u0EA5\u0EB0 \u0EAE\u0EB9\u0E9A\u0EC1\u0E9A\u0E9A\u0EC1\u0E96\u0EA7\u0E94\u0EBD\u0EA7\u0EC0\u0E81\u0EBB\u0EC8\u0EB2; \u0EAE\u0EAD\u0E9A\u0EAB\u0EBC\u0EB2\u0E8D\u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0EC3\u0E8A\u0EC9 `lines`." }, lines: { required: false, type: () => [require("./stock.dto").HandoverTypeLineDto], description: "\u0EAE\u0EAD\u0E9A\u0E94\u0EBD\u0EA7 \u0EAB\u0EBC\u0EB2\u0E8D\u0E9B\u0EB0\u0EC0\u0E9E\u0E94\u0E84\u0EB3 \u2014 \u0E97\u0EB8\u0E81\u0EC1\u0E96\u0EA7\u0EC4\u0E94\u0EC9 \u0EAE\u0EAD\u0E9A\u0E97\u0EB5 \u0EAD\u0EB1\u0E99\u0E94\u0EBD\u0EA7\u0E81\u0EB1\u0E99.", minItems: 1 }, grossWeightG: { required: false, type: () => String, description: "\u0E99\u0EC9\u0EB3\u0EDC\u0EB1\u0E81\u0EAD\u0EAD\u0E81 \u2014 \u0E9A\u0EB1\u0E87\u0E84\u0EB1\u0E9A\u0EAA\u0EB3\u0EA5\u0EB1\u0E9A \u0E84\u0EB3\u0E94\u0EB5/\u0E84\u0EB3\u0EAB\u0E8D\u0EB8\u0E9A/\u0EC1\u0E97\u0EC8\u0E87." }, pureWeightG: { required: false, type: () => String, description: "\u0EC0\u0E99\u0EB7\u0EC9\u0EAD\u0EA5\u0EC9\u0EA7\u0E99." }, glassWeightG: { required: false, type: () => String, description: "\u0EA1\u0EB5\u0EC1\u0E81\u0EC9\u0EA7." }, buybackIds: { required: false, type: () => [String], description: "\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99 Buyback \u0E84\u0EB3\u0E95\u0EBB\u0EC9\u0EA1 \u0E97\u0EB5\u0EC8\u0EA1\u0EAD\u0E9A\u0EC3\u0E99\u0EAE\u0EAD\u0E9A\u0E99\u0EB5\u0EC9.", minItems: 1 }, weightG: { required: false, type: () => String, description: "\u0EAE\u0EB9\u0E9A\u0EC1\u0E9A\u0E9A\u0EC0\u0E81\u0EBB\u0EC8\u0EB2: \u0E99\u0EC9\u0EB3\u0EDC\u0EB1\u0E81\u0E81\u0EC9\u0EAD\u0E99\u0E94\u0EBD\u0EA7. \u0E8D\u0EB1\u0E87\u0EAE\u0EB1\u0E9A\u0EC4\u0EA7\u0EC9\u0EC0\u0E9E\u0EB7\u0EC8\u0EAD\u0E9A\u0ECD\u0EC8\u0EC3\u0EAB\u0EC9 client \u0EC0\u0E81\u0EBB\u0EC8\u0EB2\u0E9E\u0EB1\u0E87,\n\u0EC1\u0E95\u0EC8\u0E9F\u0EAD\u0EA1\u0EC3\u0EDD\u0EC8\u0EAA\u0EBB\u0EC8\u0E87 grossWeightG \u0EA1\u0EB2\u0EC1\u0E97\u0E99." }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateHandoverDto = CreateHandoverDto;
@@ -328,17 +334,17 @@ __decorate([
 ], CreateHandoverDto.prototype, "lines", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)({}, { message: 'ນ້ຳໜັກອອກຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກອອກ' }),
     __metadata("design:type", String)
 ], CreateHandoverDto.prototype, "grossWeightG", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)({}, { message: 'ເນື້ອລ້ວນຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ເນື້ອລ້ວນ' }),
     __metadata("design:type", String)
 ], CreateHandoverDto.prototype, "pureWeightG", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)({}, { message: 'ນ້ຳໜັກມີແກ້ວຕ້ອງເປັນຕົວເລກ' }),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກມີແກ້ວ' }),
     __metadata("design:type", String)
 ], CreateHandoverDto.prototype, "glassWeightG", void 0);
 __decorate([
@@ -350,12 +356,13 @@ __decorate([
 ], CreateHandoverDto.prototype, "buybackIds", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsNumberString)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກ' }),
     __metadata("design:type", String)
 ], CreateHandoverDto.prototype, "weightG", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateHandoverDto.prototype, "note", void 0);
 //# sourceMappingURL=stock.dto.js.map

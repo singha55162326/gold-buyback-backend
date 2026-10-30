@@ -2,17 +2,18 @@ import {
   ArrayMinSize,
   IsArray,
   IsIn,
-  IsNumberString,
   IsOptional,
   IsString,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 export class CashAmountLineDto {
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
 }
 
 /** ເບີກເງິນ (+) / ມອບເງິນ (-) — TOR §4.1. */
@@ -25,7 +26,7 @@ export class CreateCashRequestDto {
   @Type(() => CashAmountLineDto)
   lines: CashAmountLineDto[];
 
-  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 /**
@@ -42,7 +43,7 @@ export class BankHistoryDto extends HistoryRangeDto {
 
 export class ReviewCashRequestDto {
   @IsIn(['APPROVED', 'REJECTED']) decision: 'APPROVED' | 'REJECTED';
-  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsString() @MaxLength(300, { message: 'ເຫດຜົນຍາວເກີນ 300 ຕົວ' }) reason?: string;
 }
 
 /** Direct Cash In/Out/Other Income/Expense — TOR §3.7. */
@@ -51,8 +52,8 @@ export class CreateCashTransactionDto {
   type: 'IN' | 'OUT' | 'OTHER_INCOME' | 'OTHER_EXPENSE';
 
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString() amount: string;
-  @IsOptional() @IsString() note?: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 /** Bank Deposit/Withdraw/Income/Expense — TOR §3.7. */
@@ -71,13 +72,13 @@ export class CreateBankTransactionDto {
   type: 'DEPOSIT' | 'WITHDRAW';
 
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString() amount: string;
-  @IsOptional() @IsString() note?: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 
 /** ເງິນ Bank ສຸດທິ — ADMIN/MANAGER only (TOR §3.7). */
 export class SetBankNetBalanceDto {
   @IsString() bankAccountId: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString() netAmount: string;
+  @IsDecimalString({ labelLo: 'ຍອດເງິນສຸດທິ' }) netAmount: string;
 }

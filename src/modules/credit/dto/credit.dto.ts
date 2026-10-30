@@ -1,21 +1,24 @@
 import {
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsInt,
-  IsNumberString,
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
-  ValidateNested,  ArrayMinSize,  IsArray,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
+import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
 
 export class CreditReceiptDto {
   @IsIn(['CASH', 'BANK']) method: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
-  @IsNumberString({}, { message: 'ຈຳນວນເງິນຕ້ອງເປັນຕົວເລກ' }) amount: string;
+  @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
 }
 
 /**
@@ -50,10 +53,10 @@ export class CreateCreditDto {
 
   @IsString() goldItemId: string;
   @IsOptional() @IsString() cabinetId?: string;
-  @IsNumberString() weightG: string;
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
   @IsInt() @Min(1) quantity: number;
-  @IsNumberString() sellPrice: string;
-  @IsNumberString() downPayment: string;
+  @IsDecimalString({ labelLo: 'ລາຄາຂາຍ' }) sellPrice: string;
+  @IsDecimalString({ labelLo: 'ເງິນວາງດາວ' }) downPayment: string;
 
   @ValidateNested()
   /** Superseded by `receipts`; accepted so an older client still works. */
@@ -71,7 +74,7 @@ export class CreateCreditDto {
 
 export class ReviewCreditDto {
   @IsIn(['APPROVED', 'REJECTED']) decision: 'APPROVED' | 'REJECTED';
-  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsString() @MaxLength(300, { message: 'ເຫດຜົນຍາວເກີນ 300 ຕົວ' }) reason?: string;
 }
 
 export class ReceiveCreditDto {
@@ -79,7 +82,7 @@ export class ReceiveCreditDto {
   @IsOptional() @IsIn(['CASH', 'BANK']) method?: 'CASH' | 'BANK';
   @IsOptional() @IsString() bankAccountId?: string;
   @IsOptional() @IsIn(['LAK', 'THB', 'USD']) currency?: 'LAK' | 'THB' | 'USD';
-  @IsOptional() @IsNumberString() amount?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount?: string;
 
   /** Multi-leg form: ສົດ and ໂອນ, several currencies, one receipt. */
   @IsOptional()
