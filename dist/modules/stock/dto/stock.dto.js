@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CreateHandoverDto = exports.HandoverTypeLineDto = exports.HandoverQueryDto = exports.FactoryTrackingQueryDto = exports.FactoryAssessmentDto = exports.ReviewStockDto = exports.CreateTransferDto = exports.CreateStockOutDto = exports.CreateStockInDto = exports.StockLineDto = void 0;
+exports.UpdateOldLedgerRowDto = exports.UpdateOldTypeBalanceDto = exports.UpdateSkuBalanceDto = exports.UpdateStockMovementDto = exports.CreateHandoverDto = exports.HandoverTypeLineDto = exports.HandoverQueryDto = exports.FactoryTrackingQueryDto = exports.FactoryAssessmentDto = exports.ReviewStockDto = exports.CreateTransferDto = exports.CreateStockOutDto = exports.CreateStockInDto = exports.StockLineDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
@@ -385,4 +385,119 @@ __decorate([
     (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], CreateHandoverDto.prototype, "note", void 0);
+class UpdateStockMovementDto {
+    partnerId;
+    goldTypeId;
+    transformType;
+    goldPercent;
+    totalCost;
+    laborFeeThb;
+    note;
+    lines;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { partnerId: { required: false, type: () => String }, goldTypeId: { required: false, type: () => String }, transformType: { required: false, nullable: true, enum: ["DYE", "ETCH", "MELT"], enum: ['DYE', 'ETCH', 'MELT'] }, goldPercent: { required: false, type: () => String }, totalCost: { required: false, type: () => String }, laborFeeThb: { required: false, type: () => String }, note: { required: false, type: () => String, maxLength: 500 }, lines: { required: false, type: () => [require("./stock.dto").StockLineDto] } };
+    }
+}
+exports.UpdateStockMovementDto = UpdateStockMovementDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateStockMovementDto.prototype, "partnerId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateStockMovementDto.prototype, "goldTypeId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['DYE', 'ETCH', 'MELT']),
+    __metadata("design:type", Object)
+], UpdateStockMovementDto.prototype, "transformType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: '%ຄຳ', max: 100 }),
+    __metadata("design:type", String)
+], UpdateStockMovementDto.prototype, "goldPercent", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຕົ້ນທຶນຄຳ' }),
+    __metadata("design:type", String)
+], UpdateStockMovementDto.prototype, "totalCost", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຄ່າແຮງ' }),
+    __metadata("design:type", String)
+], UpdateStockMovementDto.prototype, "laborFeeThb", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
+    __metadata("design:type", String)
+], UpdateStockMovementDto.prototype, "note", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => StockLineDto),
+    __metadata("design:type", Array)
+], UpdateStockMovementDto.prototype, "lines", void 0);
+class UpdateSkuBalanceDto {
+    openingQty;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { openingQty: { required: true, type: () => Number, minimum: 0 } };
+    }
+}
+exports.UpdateSkuBalanceDto = UpdateSkuBalanceDto;
+__decorate([
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], UpdateSkuBalanceDto.prototype, "openingQty", void 0);
+class UpdateOldTypeBalanceDto {
+    openingWeightG;
+    openingCost;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { openingWeightG: { required: true, type: () => String }, openingCost: { required: true, type: () => String } };
+    }
+}
+exports.UpdateOldTypeBalanceDto = UpdateOldTypeBalanceDto;
+__decorate([
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກຕັ້ງຕົ້ນ' }),
+    __metadata("design:type", String)
+], UpdateOldTypeBalanceDto.prototype, "openingWeightG", void 0);
+__decorate([
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຕົ້ນທຶນຕັ້ງຕົ້ນ' }),
+    __metadata("design:type", String)
+], UpdateOldTypeBalanceDto.prototype, "openingCost", void 0);
+class UpdateOldLedgerRowDto {
+    goldTypeId;
+    partnerLabel;
+    weightG;
+    totalCost;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { goldTypeId: { required: false, type: () => String }, partnerLabel: { required: false, type: () => String }, weightG: { required: false, type: () => String }, totalCost: { required: false, type: () => String } };
+    }
+}
+exports.UpdateOldLedgerRowDto = UpdateOldLedgerRowDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateOldLedgerRowDto.prototype, "goldTypeId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateOldLedgerRowDto.prototype, "partnerLabel", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ນ້ຳໜັກ' }),
+    __metadata("design:type", String)
+], UpdateOldLedgerRowDto.prototype, "weightG", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຕົ້ນທຶນ' }),
+    __metadata("design:type", String)
+], UpdateOldLedgerRowDto.prototype, "totalCost", void 0);
 //# sourceMappingURL=stock.dto.js.map

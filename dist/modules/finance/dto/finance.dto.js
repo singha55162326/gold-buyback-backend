@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SettleApArCashDto = exports.CreateApArCashEntryDto = exports.UpdateApArCashCategoryDto = exports.CreateApArCashCategoryDto = exports.CreateConsignmentDto = exports.ConsignmentLineDto = exports.CreateIncomeExpenseDto = exports.ConsignmentListDto = exports.IncomeExpenseHistoryDto = exports.IncomeExpenseLineDto = exports.UpdateIncomeExpenseCategoryDto = exports.CreateIncomeExpenseCategoryDto = exports.UpdateBankAccountDto = exports.CreateBankAccountDto = void 0;
+exports.SettleApArCashDto = exports.CreateApArCashEntryDto = exports.UpdateApArCashCategoryDto = exports.CreateApArCashCategoryDto = exports.CreateConsignmentDto = exports.ConsignmentLineDto = exports.UpdateIncomeExpenseDto = exports.CreateIncomeExpenseDto = exports.ConsignmentListDto = exports.IncomeExpenseHistoryDto = exports.IncomeExpenseSummaryDto = exports.IncomeExpenseLineDto = exports.UpdateIncomeExpenseCategoryDto = exports.CreateIncomeExpenseCategoryDto = exports.UpdateBankAccountDto = exports.CreateBankAccountDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
@@ -146,6 +146,18 @@ __decorate([
  * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
  * `@Query('...')` ກໍຕາມ.
  */
+class IncomeExpenseSummaryDto extends history_range_dto_1.HistoryRangeDto {
+    date;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { date: { required: false, type: () => String, pattern: "^\\d{4}-\\d{2}-\\d{2}$" } };
+    }
+}
+exports.IncomeExpenseSummaryDto = IncomeExpenseSummaryDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/, { message: 'date ຕ້ອງເປັນຮູບແບບ YYYY-MM-DD' }),
+    __metadata("design:type", String)
+], IncomeExpenseSummaryDto.prototype, "date", void 0);
 class IncomeExpenseHistoryDto extends history_range_dto_1.HistoryRangeDto {
     kind;
     static _OPENAPI_METADATA_FACTORY() {
@@ -223,6 +235,49 @@ __decorate([
     __metadata("design:type", String)
 ], CreateIncomeExpenseDto.prototype, "note", void 0);
 /** §3.7 — Module ຝາກສິນຄ້າ */
+class UpdateIncomeExpenseDto {
+    categoryId;
+    method;
+    bankAccountId;
+    currency;
+    amount;
+    note;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { categoryId: { required: false, type: () => String }, method: { required: false, enum: ["CASH", "BANK"], enum: ['CASH', 'BANK'] }, bankAccountId: { required: false, type: () => String, nullable: true }, currency: { required: false, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: false, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
+    }
+}
+exports.UpdateIncomeExpenseDto = UpdateIncomeExpenseDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateIncomeExpenseDto.prototype, "categoryId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['CASH', 'BANK']),
+    __metadata("design:type", String)
+], UpdateIncomeExpenseDto.prototype, "method", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", Object)
+], UpdateIncomeExpenseDto.prototype, "bankAccountId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['LAK', 'THB', 'USD']),
+    __metadata("design:type", String)
+], UpdateIncomeExpenseDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
+    __metadata("design:type", String)
+], UpdateIncomeExpenseDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
+    __metadata("design:type", String)
+], UpdateIncomeExpenseDto.prototype, "note", void 0);
 class ConsignmentLineDto {
     nameLo;
     weightG;

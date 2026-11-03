@@ -6,7 +6,9 @@ import { GRAMS_PER_BAHT } from './constants.js';
  * normal outcome, not an error.
  */
 export function findPostingRule(rules, scope, type, partnerCode) {
-    return (rules.find((r) => r.scope === scope && r.type === type && r.partnerCode === partnerCode) ?? null);
+    return (rules.find((r) => r.scope === scope && r.type === type && r.partnerCode === partnerCode) ??
+        rules.find((r) => r.type === type && r.partnerCode === partnerCode) ??
+        null);
 }
 /**
  * Turn a movement into the IN/OUT columns of the AP/AR (GOLD) ledger.

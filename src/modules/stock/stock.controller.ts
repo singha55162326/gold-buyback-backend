@@ -2,9 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -20,6 +22,10 @@ import {
   FactoryAssessmentDto,
   FactoryTrackingQueryDto,
   ReviewStockDto,
+  UpdateStockMovementDto,
+  UpdateSkuBalanceDto,
+  UpdateOldTypeBalanceDto,
+  UpdateOldLedgerRowDto,
 } from './dto/stock.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -93,6 +99,66 @@ export class StockController {
   @Post('transfer')
   transfer(@Body() dto: CreateTransferDto, @CurrentUser() user: AuthenticatedUser) {
     return this.stock.transfer(dto, user);
+  }
+
+  @Get('movements/:id')
+  getMovement(@Param('id') id: string) {
+    return this.stock.getMovement(id);
+  }
+
+  @Roles('ADMIN')
+  @Patch('movements/:id')
+  updateMovement(
+    @Param('id') id: string,
+    @Body() dto: UpdateStockMovementDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.stock.updateMovement(id, dto, user);
+  }
+
+  @Roles('ADMIN')
+  @Delete('movements/:id')
+  deleteMovement(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.stock.deleteMovement(id, user);
+  }
+
+  @Roles('ADMIN')
+  @Patch('new/balances/:id')
+  updateSkuBalance(
+    @Param('id') id: string,
+    @Body() dto: UpdateSkuBalanceDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.stock.updateSkuBalance(id, dto, user);
+  }
+
+  @Roles('ADMIN')
+  @Patch('old/balances/:id')
+  updateOldTypeBalance(
+    @Param('id') id: string,
+    @Body() dto: UpdateOldTypeBalanceDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.stock.updateOldTypeBalance(id, dto, user);
+  }
+
+  @Roles('ADMIN')
+  @Patch('old/history/:id')
+  updateOldHistoryRow(
+    @Param('id') id: string,
+    @Body() dto: UpdateOldLedgerRowDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.stock.updateOldHistoryRow(id, dto, user);
+  }
+
+  @Roles('ADMIN')
+  @Delete('old/history/:id')
+  deleteOldHistoryRow(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.stock.deleteOldHistoryRow(id, user);
   }
 
   /* ---- §7.3 FACTORY tracking ---- */

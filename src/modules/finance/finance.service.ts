@@ -21,6 +21,8 @@ import type {
   CreateConsignmentDto,
   CreateIncomeExpenseCategoryDto,
   CreateIncomeExpenseDto,
+  UpdateIncomeExpenseDto,
+  IncomeExpenseSummaryDto,
   SettleApArCashDto,
 } from './dto/finance.dto';
 
@@ -262,6 +264,324 @@ export class FinanceService {
     ]);
     // ຜູ້ບັນທຶກ — ລູກຄ້າຂໍໃຫ້ເຫັນທຸກ Module ທີ່ມີການລົງລາຍການ.
     return this.range.page(await this.audit.withCreatorNames(rows), total, range);
+  }
+
+  async incomeExpenseDailySummary(
+    query: IncomeExpenseSummaryDto,
+    user?: AuthenticatedUser,
+  ) {
+    if (query.date) {
+      if (!query.from_date && !query.fromDate) query.from_date = query.date;
+      if (!query.to_date && !query.toDate) query.to_date = query.date;
+    }
+    const range = this.range.resolve(query, user);
+    const where = {
+      deletedAt: null,
+      createdAt: HistoryRangeService.window(range),
+    };
+
+    const [byKindAndCurrency, byMethodKindCurrency, totalTransactions] =
+      await Promise.all([
+        this.prisma.incomeExpenseTransaction.groupBy({
+          by: ['kind', 'currency'],
+          where,
+          _sum: { amount: true },
+          _count: { _all: true },
+        }),
+        this.prisma.incomeExpenseTransaction.groupBy({
+          by: ['method', 'kind', 'currency'],
+          where,
+          _sum: { amount: true },
+          _count: { _all: true },
+        }),
+        this.prisma.incomeExpenseTransaction.count({ where }),
+      ]);
+
+    let totalIncomeCount = 0;
+    let totalExpenseCount = 0;
+
+    const currencies = CURRENCIES.map((currency) => {
+      const incRow = byKindAndCurrency.find(
+        (r) => r.currency === currency && r.kind === 'INCOME',
+      );
+      const expRow = byKindAndCurrency.find(
+        (r) => r.currency === currency && r.kind === 'EXPENSE',
+      );
+      const incomeDec = toDec(incRow?._sum.amount);
+      const expenseDec = toDec(expRow?._sum.amount);
+      const netDec = incomeDec.minus(expenseDec);
+      const incomeCount = incRow?._count._all ?? 0;
+      const expenseCount = expRow?._count._all ?? 0;
+      totalIncomeCount += incomeCount;
+      totalExpenseCount += expenseCount;
+
+      return {
+        currency,
+        income: incomeDec.toFixed(),
+        expense: expenseDec.toFixed(),
+        net: netDec.toFixed(),
+        incomeCount,
+        expenseCount,
+      };
+    });
+
+    const byMethod = (['CASH', 'BANK'] as const).map((method) => {
+      const methodCurrencies = CURRENCIES.map((currency) => {
+        const incRow = byMethodKindCurrency.find(
+          (r) =>
+            r.method === method &&
+            r.currency === currency &&
+            r.kind === 'INCOME',
+        );
+        const expRow = byMethodKindCurrency.find(
+          (r) =>
+            r.method === method &&
+            r.currency === currency &&
+            r.kind === 'EXPENSE',
+        );
+        const incomeDec = toDec(incRow?._sum.amount);
+        const expenseDec = toDec(expRow?._sum.amount);
+        const netDec = incomeDec.minus(expenseDec);
+
+        return {
+          currency,
+          income: incomeDec.toFixed(),
+          expense: expenseDec.toFixed(),
+          net: netDec.toFixed(),
+          incomeCount: incRow?._count._all ?? 0,
+          expenseCount: expRow?._count._all ?? 0,
+        };
+      });
+
+      return {
+        method,
+        currencies: methodCurrencies,
+      };
+    });
+
+    const byCurrency = Object.fromEntries(
+      currencies.map((c) => [c.currency, c]),
+    ) as Record<Currency, (typeof currencies)[number]>;
+
+    return {
+      date: range.fromDate === range.toDate ? range.fromDate : undefined,
+      fromDate: range.fromDate,
+      toDate: range.toDate,
+      totalTransactions,
+      totalIncomeCount,
+      totalExpenseCount,
+      currencies,
+      byCurrency,
+      byMethod,
+    };
+  }
+
+  async updateIncomeExpense(
+    id: string,
+    dto: UpdateIncomeExpenseDto,
+    user: AuthenticatedUser,
+  ) {
+    const before = await this.prisma.incomeExpenseTransaction.findFirst({
+      where: { id, deletedAt: null },
+      include: { category: true, bankAccount: true },
+    });
+    if (!before) throw new NotFoundException('ບໍ່ພົບລາຍການຮັບຈ່າຍ');
+
+    let category = before.category;
+    if (dto.categoryId && dto.categoryId !== before.categoryId) {
+      const found = await this.prisma.incomeExpenseCategory.findFirst({
+        where: { id: dto.categoryId, deletedAt: null },
+      });
+      if (!found) throw new NotFoundException('ບໍ່ພົບລາຍການຮັບຈ່າຍ');
+      category = found;
+    }
+
+    const method = dto.method ?? before.method;
+    const bankAccountId =
+      method === 'BANK'
+        ? dto.bankAccountId !== undefined
+          ? dto.bankAccountId
+          : before.bankAccountId
+        : null;
+
+    if (method === 'BANK' && !bankAccountId) {
+      throw new BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
+    }
+    if (bankAccountId) {
+      const bank = await this.prisma.bankAccount.findFirst({
+        where: { id: bankAccountId },
+      });
+      if (!bank) throw new NotFoundException('ບໍ່ພົບທະນາຄານ');
+    }
+
+    const currency = dto.currency ?? before.currency;
+    const amount = dto.amount !== undefined ? dec(dto.amount) : dec(before.amount);
+    if (!amount.isFinite() || amount.lte(0)) {
+      throw new BadRequestException('ຈຳນວນເງິນຕ້ອງໃຫຍ່ກວ່າ 0');
+    }
+
+    const note = dto.note !== undefined ? dto.note : before.note;
+    const kind = category.kind;
+    const isIncome = kind === 'INCOME';
+
+    return this.prisma.$transaction(async (tx) => {
+      const after = await tx.incomeExpenseTransaction.update({
+        where: { id },
+        data: {
+          categoryId: category.id,
+          kind,
+          method,
+          bankAccountId,
+          currency,
+          amount: D(amount),
+          note,
+        },
+        include: { category: true, bankAccount: true },
+      });
+
+      // Synchronize associated CashTransaction / BankTransaction
+      if (before.method === 'CASH') {
+        if (method === 'CASH') {
+          await tx.cashTransaction.updateMany({
+            where: { refType: 'IncomeExpenseTransaction', refId: id, deletedAt: null },
+            data: {
+              type: isIncome ? 'OTHER_INCOME' : 'OTHER_EXPENSE',
+              currency,
+              amount: D(amount),
+              note: `${category.nameLo}${note ? ` — ${note}` : ''}`,
+            },
+          });
+        } else {
+          await tx.cashTransaction.updateMany({
+            where: { refType: 'IncomeExpenseTransaction', refId: id, deletedAt: null },
+            data: { deletedAt: new Date(), deletedById: user.id },
+          });
+          await tx.bankTransaction.create({
+            data: {
+              businessDayId: before.businessDayId,
+              bankAccountId: bankAccountId!,
+              type: isIncome ? 'INCOME' : 'EXPENSE',
+              currency,
+              amount: D(amount),
+              refType: 'IncomeExpenseTransaction',
+              refId: id,
+              note: `${category.nameLo}${note ? ` — ${note}` : ''}`,
+              createdById: user.id,
+            },
+          });
+        }
+      } else {
+        if (method === 'BANK') {
+          await tx.bankTransaction.updateMany({
+            where: { refType: 'IncomeExpenseTransaction', refId: id, deletedAt: null },
+            data: {
+              bankAccountId: bankAccountId!,
+              type: isIncome ? 'INCOME' : 'EXPENSE',
+              currency,
+              amount: D(amount),
+              note: `${category.nameLo}${note ? ` — ${note}` : ''}`,
+            },
+          });
+        } else {
+          await tx.bankTransaction.updateMany({
+            where: { refType: 'IncomeExpenseTransaction', refId: id, deletedAt: null },
+            data: { deletedAt: new Date(), deletedById: user.id },
+          });
+          await tx.cashTransaction.create({
+            data: {
+              businessDayId: before.businessDayId,
+              type: isIncome ? 'OTHER_INCOME' : 'OTHER_EXPENSE',
+              currency,
+              amount: D(amount),
+              refType: 'IncomeExpenseTransaction',
+              refId: id,
+              note: `${category.nameLo}${note ? ` — ${note}` : ''}`,
+              createdById: user.id,
+            },
+          });
+        }
+      }
+
+      await this.audit.record(
+        {
+          actorId: user.id,
+          action: 'UPDATE',
+          entity: 'IncomeExpenseTransaction',
+          entityId: id,
+          before: {
+            category: before.category.nameLo,
+            kind: before.kind,
+            method: before.method,
+            bankAccountId: before.bankAccountId,
+            currency: before.currency,
+            amount: dec(before.amount).toFixed(),
+            note: before.note,
+          },
+          after: {
+            category: category.nameLo,
+            kind,
+            method,
+            bankAccountId,
+            currency,
+            amount: amount.toFixed(),
+            note,
+          },
+          summary: `ແກ້ໄຂ${isIncome ? 'ລາຍຮັບ' : 'ລາຍຈ່າຍ'} ${category.nameLo} ${amount.toFixed(0)} ${currency}`,
+        },
+        tx,
+      );
+
+      return after;
+    });
+  }
+
+  async deleteIncomeExpense(id: string, user: AuthenticatedUser) {
+    const before = await this.prisma.incomeExpenseTransaction.findFirst({
+      where: { id, deletedAt: null },
+      include: { category: true, bankAccount: true },
+    });
+    if (!before) throw new NotFoundException('ບໍ່ພົບລາຍການຮັບຈ່າຍ');
+
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const after = await tx.incomeExpenseTransaction.update({
+        where: { id },
+        data: { deletedAt: now, deletedById: user.id },
+      });
+
+      await tx.cashTransaction.updateMany({
+        where: { refType: 'IncomeExpenseTransaction', refId: id, deletedAt: null },
+        data: { deletedAt: now, deletedById: user.id },
+      });
+
+      await tx.bankTransaction.updateMany({
+        where: { refType: 'IncomeExpenseTransaction', refId: id, deletedAt: null },
+        data: { deletedAt: now, deletedById: user.id },
+      });
+
+      await this.audit.record(
+        {
+          actorId: user.id,
+          action: 'DELETE',
+          entity: 'IncomeExpenseTransaction',
+          entityId: id,
+          before: {
+            category: before.category.nameLo,
+            kind: before.kind,
+            method: before.method,
+            bankAccountId: before.bankAccountId,
+            currency: before.currency,
+            amount: dec(before.amount).toFixed(),
+            note: before.note,
+          },
+          after: { deletedAt: now.toISOString() },
+          summary: `ລຶບ${before.kind === 'INCOME' ? 'ລາຍຮັບ' : 'ລາຍຈ່າຍ'} ${before.category.nameLo} ${dec(before.amount).toFixed(0)} ${before.currency}`,
+        },
+        tx,
+      );
+
+      return after;
+    });
   }
 
   /* ---------------------------------------------------------------- *
@@ -544,11 +864,23 @@ export class FinanceService {
         });
       }
 
+      const latestEntry = await tx.cashApArLedger.findFirst({
+        where: {
+          side,
+          partnerId: dto.partnerId,
+          currency: dto.currency,
+          categoryId: { not: null },
+          deletedAt: null,
+        },
+        orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
+      });
+
       const row = await this.apar.postCash(tx, {
         reason,
         currency: dto.currency,
         amount,
         partnerId: dto.partnerId,
+        categoryId: latestEntry?.categoryId ?? undefined,
         note: dto.note ?? `ຊຳຣະ ${side} (Cash) ${partner.nameLo}`,
         createdById: user.id,
       });
@@ -584,8 +916,9 @@ export class FinanceService {
    */
   async apArByPartner(side: ApArSide) {
     const day = await this.businessDay.current();
+    const today = BusinessDayService.toDateOnly();
 
-    const [partners, openings, movements] = await Promise.all([
+    const [partners, openings, prevMovements, movements] = await Promise.all([
       this.prisma.partnerSource.findMany({
         where: { deletedAt: null, isActive: true },
         orderBy: { sortOrder: 'asc' },
@@ -593,22 +926,29 @@ export class FinanceService {
       this.prisma.cashApArOpening.findMany({ where: { businessDayId: day.id, side } }),
       this.prisma.cashApArLedger.groupBy({
         by: ['partnerId', 'currency'],
-        where: { side, businessDate: BusinessDayService.toDateOnly(), deletedAt: null },
+        where: { side, businessDate: { lt: today }, deletedAt: null },
+        _sum: { amountIn: true, amountOut: true },
+      }),
+      this.prisma.cashApArLedger.groupBy({
+        by: ['partnerId', 'currency'],
+        where: { side, businessDate: today, deletedAt: null },
         _sum: { amountIn: true, amountOut: true },
       }),
     ]);
 
-    const openingFor = (currency: Currency) =>
-      toDec(openings.find((o) => o.currency === currency)?.openingAmount);
-
     return partners.flatMap((partner) =>
       CURRENCIES.map((currency) => {
+        const prevRow = prevMovements.find(
+          (m) => m.partnerId === partner.id && m.currency === currency,
+        );
+        const prevNet = toDec(prevRow?._sum.amountIn).minus(toDec(prevRow?._sum.amountOut));
+        const broughtForward = prevNet;
+
         const row = movements.find(
           (m) => m.partnerId === partner.id && m.currency === currency,
         );
         const increases = toDec(row?._sum.amountIn);
         const decreases = toDec(row?._sum.amountOut);
-        const broughtForward = openingFor(currency);
 
         return {
           partnerId: partner.id,
@@ -627,19 +967,31 @@ export class FinanceService {
   /** ຍອດລວມ AP (Cash) / AR (Cash) per currency. */
   async apArTotals(side: ApArSide) {
     const day = await this.businessDay.current();
-    const [openings, movements] = await Promise.all([
+    const today = BusinessDayService.toDateOnly();
+
+    const [openings, prevMovements, movements] = await Promise.all([
       this.prisma.cashApArOpening.findMany({ where: { businessDayId: day.id, side } }),
       this.prisma.cashApArLedger.groupBy({
         by: ['currency'],
-        where: { side, businessDate: BusinessDayService.toDateOnly(), deletedAt: null },
+        where: { side, businessDate: { lt: today }, deletedAt: null },
+        _sum: { amountIn: true, amountOut: true },
+      }),
+      this.prisma.cashApArLedger.groupBy({
+        by: ['currency'],
+        where: { side, businessDate: today, deletedAt: null },
         _sum: { amountIn: true, amountOut: true },
       }),
     ]);
 
     return CURRENCIES.map((currency) => {
+      const prevRow = prevMovements.find((m) => m.currency === currency);
+      const prevNet = toDec(prevRow?._sum.amountIn).minus(toDec(prevRow?._sum.amountOut));
+      const manualOpening = toDec(openings.find((o) => o.currency === currency)?.openingAmount);
+      const opening = manualOpening.plus(prevNet);
+
       const row = movements.find((m) => m.currency === currency);
       const net = netCashApAr(
-        toDec(openings.find((o) => o.currency === currency)?.openingAmount),
+        opening,
         toDec(row?._sum.amountIn),
         toDec(row?._sum.amountOut),
       );

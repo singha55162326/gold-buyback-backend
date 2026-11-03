@@ -188,3 +188,34 @@ export class CreateHandoverDto {
 
   @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
+
+export class UpdateStockMovementDto {
+  @IsOptional() @IsString() partnerId?: string;
+  @IsOptional() @IsString() goldTypeId?: string;
+  @IsOptional() @IsIn(['DYE', 'ETCH', 'MELT']) transformType?: 'DYE' | 'ETCH' | 'MELT' | null;
+  @IsOptional() @IsDecimalString({ labelLo: '%ຄຳ', max: 100 }) goldPercent?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຕົ້ນທຶນຄຳ' }) totalCost?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຄ່າແຮງ' }) laborFeeThb?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => StockLineDto)
+  lines?: StockLineDto[];
+}
+
+export class UpdateSkuBalanceDto {
+  @IsInt() @Min(0) openingQty: number;
+}
+
+export class UpdateOldTypeBalanceDto {
+  @IsDecimalString({ labelLo: 'ນ້ຳໜັກຕັ້ງຕົ້ນ' }) openingWeightG: string;
+  @IsDecimalString({ labelLo: 'ຕົ້ນທຶນຕັ້ງຕົ້ນ' }) openingCost: string;
+}
+
+export class UpdateOldLedgerRowDto {
+  @IsOptional() @IsString() goldTypeId?: string;
+  @IsOptional() @IsString() partnerLabel?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຕົ້ນທຶນ' }) totalCost?: string;
+}

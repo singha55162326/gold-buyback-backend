@@ -44,6 +44,12 @@ let OrdersController = class OrdersController {
     addReceipt(id, dto, user) {
         return this.orders.addReceipt(id, dto, user);
     }
+    update(id, dto, user) {
+        return this.orders.update(id, dto, user);
+    }
+    remove(id, user) {
+        return this.orders.remove(id, user);
+    }
 };
 exports.OrdersController = OrdersController;
 __decorate([
@@ -100,6 +106,27 @@ __decorate([
     __metadata("design:paramtypes", [String, order_dto_1.ReceiveOrderDto, Object]),
     __metadata("design:returntype", void 0)
 ], OrdersController.prototype, "addReceipt", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Patch)(':id'),
+    openapi.ApiResponse({ status: 200, type: Object }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, order_dto_1.UpdateOrderDto, Object]),
+    __metadata("design:returntype", void 0)
+], OrdersController.prototype, "update", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Delete)(':id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], OrdersController.prototype, "remove", null);
 exports.OrdersController = OrdersController = __decorate([
     (0, swagger_1.ApiTags)('orders'),
     (0, swagger_1.ApiBearerAuth)('bearer'),

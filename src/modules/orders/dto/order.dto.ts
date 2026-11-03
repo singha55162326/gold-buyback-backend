@@ -1,3 +1,4 @@
+import type { OrderStatus } from '@prisma/client';
 import {
   ArrayMinSize,
   IsArray,
@@ -147,6 +148,37 @@ export class ReceiveOrderDto {
   @IsOptional() @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount?: string;
 
   /** Multi-leg form: ສົດ and ໂອນ, several currencies, one receipt. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderReceiptDto)
+  receipts?: OrderReceiptDto[];
+}
+
+export class UpdateOrderDto {
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() billNo?: string;
+  @IsOptional() @IsIn(['IT', 'ITP']) productType?: 'IT' | 'ITP';
+  @IsOptional() @IsString() staffName?: string;
+  @IsOptional() @IsString() supplierId?: string | null;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string | null;
+  @IsOptional() @IsDecimalString({ labelLo: 'ຍອດລວມ' }) totalAmount?: string;
+  @IsOptional()
+  @IsIn([
+    'ORDER_PLACED',
+    'SENT_TO_SMITH',
+    'RECEIVED_FROM_SMITH',
+    'AWAITING_PICKUP',
+    'COMPLETED',
+    'CANCELLED',
+  ])
+  status?: OrderStatus;
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderLineDto)
+  lines?: OrderLineDto[];
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

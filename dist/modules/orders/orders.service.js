@@ -391,6 +391,7 @@ let OrdersService = class OrdersService {
                         ? {
                             status: 'COMPLETED',
                             completedAt: new Date(),
+                            customerPickupAt: order.customerPickupAt ?? new Date(),
                             statusHistory: {
                                 create: {
                                     fromStatus: order.status,
@@ -552,6 +553,179 @@ let OrdersService = class OrdersService {
         const prefix = `OD-${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
         const count = await tx.order.count({ where: { code: { startsWith: prefix } } });
         return `${prefix}-${String(count + 1).padStart(3, '0')}`;
+    }
+    async update(id, dto, user) {
+        const order = await this.prisma.order.findFirst({
+            where: { id, deletedAt: null },
+            include: { lines: true, customer: true },
+        });
+        if (!order)
+            throw new common_1.NotFoundException('ບໍ່ພົບ Order');
+        return this.prisma.$transaction(async (tx) => {
+            let customerId = order.customerId;
+            if (dto.phone && dto.phone !== order.customer.phone) {
+                const customer = await tx.customer.upsert({
+                    where: { phone: dto.phone },
+                    update: {},
+                    create: { phone: dto.phone },
+                });
+                customerId = customer.id;
+            }
+            let totalWeightG = order.weightG;
+            let totalQuantity = order.quantity;
+            let goldItemId = order.goldItemId;
+            if (dto.lines && dto.lines.length > 0) {
+                totalWeightG = D(dto.lines.reduce((sum, l) => sum.plus((0, domain_1.dec)(l.weightG).mul(l.quantity)), (0, domain_1.dec)(0)));
+                totalQuantity = dto.lines.reduce((sum, l) => sum + l.quantity, 0);
+                goldItemId = dto.lines[0].goldItemId;
+                await tx.orderLine.deleteMany({ where: { orderId: id } });
+                await tx.orderLine.createMany({
+                    data: dto.lines.map((line, index) => ({
+                        orderId: id,
+                        goldItemId: line.goldItemId,
+                        weightG: D((0, domain_1.dec)(line.weightG)),
+                        quantity: line.quantity,
+                        amount: line.amount ? D((0, domain_1.dec)(line.amount)) : null,
+                        note: line.note ?? null,
+                        sortOrder: index,
+                    })),
+                });
+            }
+            let newTotalAmount = order.totalAmount;
+            let newReceivedAmount = order.receivedAmount;
+            let newBalanceAmount = order.balanceAmount;
+            if (dto.totalAmount) {
+                const totalDec = (0, domain_1.dec)(dto.totalAmount);
+                if (totalDec.lte(0))
+                    throw new common_1.BadRequestException('ຍອດລວມຕ້ອງໃຫຍ່ກວ່າ 0');
+                newTotalAmount = D(totalDec);
+            }
+            if (dto.receipts !== undefined) {
+                const context = await this.pricingContext.load();
+                const totalDec = (0, domain_1.dec)(newTotalAmount.toFixed());
+                const receipt = this.resolveReceipts(dto.receipts, context.rates, totalDec);
+                const day = await this.businessDay.current();
+                newReceivedAmount = D(receipt.applied);
+                const remaining = totalDec.minus(receipt.applied);
+                newBalanceAmount = D(remaining.gt(0) ? remaining : (0, domain_1.dec)(0));
+                // Delete old receipts, cash/bank transactions, and advances for this order
+                await tx.cashTransaction.deleteMany({ where: { refType: 'Order', refId: id } });
+                await tx.bankTransaction.deleteMany({ where: { refType: 'Order', refId: id } });
+                await tx.advanceLedger.deleteMany({ where: { orderId: id } });
+                await tx.orderReceipt.deleteMany({ where: { orderId: id } });
+                // Create new receipts
+                await tx.orderReceipt.createMany({
+                    data: receipt.lines.map((line) => ({
+                        orderId: id,
+                        method: line.method,
+                        bankAccountId: line.bankAccountId ?? null,
+                        currency: line.currency,
+                        rate: D(line.rate),
+                        amount: D(line.amount),
+                        amountLak: D(line.amountLak),
+                        changeLak: D(line.changeLak),
+                        isDeposit: true,
+                        createdById: user.id,
+                    })),
+                });
+                for (const line of receipt.lines) {
+                    await this.recordReceiptMoney(tx, {
+                        method: line.method,
+                        bankAccountId: line.bankAccountId ?? null,
+                        currency: line.currency,
+                        amount: D(line.amount),
+                        businessDayId: day.id,
+                        refId: order.id,
+                        note: `ເງິນມັດຈໍາ Order ${order.code} (ແກ້ໄຂ)`,
+                        createdById: user.id,
+                    });
+                    await this.advance.post(tx, {
+                        orderId: order.id,
+                        currency: line.currency,
+                        amount: line.amount,
+                        direction: 'IN',
+                        method: line.method,
+                        bankAccountId: line.bankAccountId ?? null,
+                        note: `ເງິນມັດຈໍາ Order ${order.code} (ແກ້ໄຂ)`,
+                        createdById: user.id,
+                    });
+                }
+                if (receipt.lines.length === 0) {
+                    await this.advance.post(tx, {
+                        orderId: order.id,
+                        currency: 'LAK',
+                        amount: (0, domain_1.dec)(0),
+                        direction: 'IN',
+                        allowZero: true,
+                        note: `ແກ້ໄຂ Order ${order.code} — ຍັງບໍ່ໄດ້ຮັບເງິນມັດຈຳ`,
+                        createdById: user.id,
+                    });
+                }
+            }
+            else if (dto.totalAmount) {
+                const totalDec = (0, domain_1.dec)(dto.totalAmount);
+                const receivedDec = (0, domain_1.dec)(order.receivedAmount.toFixed());
+                const balDec = totalDec.minus(receivedDec);
+                newBalanceAmount = D(balDec.gt(0) ? balDec : (0, domain_1.dec)(0));
+            }
+            const updated = await tx.order.update({
+                where: { id },
+                data: {
+                    customerId,
+                    goldItemId,
+                    weightG: totalWeightG,
+                    quantity: totalQuantity,
+                    totalAmount: newTotalAmount,
+                    receivedAmount: newReceivedAmount,
+                    balanceAmount: newBalanceAmount,
+                    ...(dto.billNo ? { billNo: dto.billNo } : {}),
+                    ...(dto.productType ? { productType: dto.productType } : {}),
+                    ...(dto.staffName ? { staffName: dto.staffName.trim() } : {}),
+                    ...(dto.supplierId !== undefined ? { supplierId: dto.supplierId || null } : {}),
+                    ...(dto.note !== undefined ? { note: dto.note || null } : {}),
+                    ...(dto.status ? { status: dto.status } : {}),
+                },
+                include: {
+                    customer: true,
+                    goldItem: true,
+                    supplier: true,
+                    lines: { include: { goldItem: true } },
+                    receipts: { include: { bankAccount: true } },
+                },
+            });
+            await this.audit.record({
+                actorId: user.id,
+                action: 'UPDATE',
+                entity: 'Order',
+                entityId: order.id,
+                summary: `ແກ້ໄຂ Order ${order.code} (Admin)`,
+            }, tx);
+            return updated;
+        });
+    }
+    async remove(id, user) {
+        const order = await this.prisma.order.findFirst({ where: { id, deletedAt: null } });
+        if (!order)
+            throw new common_1.NotFoundException('ບໍ່ພົບ Order');
+        return this.prisma.$transaction(async (tx) => {
+            const now = new Date();
+            await tx.order.update({
+                where: { id },
+                data: { deletedAt: now, deletedById: user.id },
+            });
+            await tx.advanceLedger.updateMany({
+                where: { orderId: id },
+                data: { deletedAt: now },
+            });
+            await this.audit.record({
+                actorId: user.id,
+                action: 'DELETE',
+                entity: 'Order',
+                entityId: order.id,
+                summary: `ລຶບ Order ${order.code} (Admin)`,
+            }, tx);
+            return { success: true };
+        });
     }
 };
 exports.OrdersService = OrdersService;

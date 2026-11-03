@@ -358,6 +358,10 @@ async function seedGoldApArPostingRules() {
     { scope: 'OLD', type: 'OUT', code: 'FACTORY', side: 'AP', sign: -1, note: 'Stock OUT ໄປ FACTORY -> -AP (ລົບລ້າງພັນທະສົ່ງມອບຄຳ FACTORY)' },
     { scope: 'OLD', type: 'OUT', code: 'OUTSOURCE_SMITH', side: 'AP', sign: -1, note: 'Stock OUT ໄປ ຊ່າງນອກ -> -AP (ລົບລ້າງພັນທະສົ່ງມອບຄຳ ຊ່າງນອກ)' },
     { scope: 'OLD', type: 'OUT', code: 'OTHER', side: 'AP', sign: -1, note: 'Stock OUT ໄປ ອື່ນໆ -> -AP (ລົບລ້າງພັນທະສົ່ງມອບຄຳ ອື່ນໆ)' },
+    { scope: 'NEW', type: 'OUT', code: 'FACTORY', side: 'AP', sign: -1, note: 'Stock OUT ໄປ FACTORY -> -AP (ລົບລ້າງພັນທະ FACTORY)' },
+    { scope: 'NEW', type: 'OUT', code: 'OUTSOURCE_SMITH', side: 'AP', sign: -1, note: 'Stock OUT ໄປ ຊ່າງນອກ -> -AP (ລົບລ້າງພັນທະ ຊ່າງນອກ)' },
+    { scope: 'NEW', type: 'OUT', code: 'OTHER', side: 'AP', sign: -1, note: 'Stock OUT ໄປ ອື່ນໆ -> -AP (ລົບລ້າງພັນທະ ອື່ນໆ)' },
+    { scope: 'NEW', type: 'OUT', code: 'EASY', side: 'AP', sign: -1, note: 'Stock OUT ໄປ EASY -> -AP (ລົບລ້າງພັນທະ EASY)' },
     // Handing gold back to EASY settles the payable.
     {
       scope: 'NEW',

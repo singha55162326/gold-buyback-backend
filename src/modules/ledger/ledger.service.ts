@@ -70,12 +70,18 @@ export class LedgerService {
   /** AP/AR ເງິນສົດ ຂອງມື້ການຄ້າ. ບໍ່ສົ່ງມື້ມາ = ມື້ນີ້. */
   async cashApAr(day?: { id: string; date: Date }) {
     const target = day ?? (await this.businessDay.current());
+    const targetDate = BusinessDayService.toDateOnly(target.date);
 
-    const [openings, movements] = await Promise.all([
+    const [openings, prevMovements, movements] = await Promise.all([
       this.prisma.cashApArOpening.findMany({ where: { businessDayId: target.id } }),
       this.prisma.cashApArLedger.groupBy({
         by: ['side', 'currency'],
-        where: { businessDate: target.date, deletedAt: null },
+        where: { businessDate: { lt: targetDate }, deletedAt: null },
+        _sum: { amountIn: true, amountOut: true },
+      }),
+      this.prisma.cashApArLedger.groupBy({
+        by: ['side', 'currency'],
+        where: { businessDate: targetDate, deletedAt: null },
         _sum: { amountIn: true, amountOut: true },
       }),
     ]);
@@ -86,9 +92,16 @@ export class LedgerService {
 
     return (['AP', 'AR'] as const).flatMap((side) =>
       CURRENCIES.map((currency) => {
+        const prevRow = prevMovements.find((m) => m.side === side && m.currency === currency);
+        const prevNet = dec(prevRow?._sum.amountIn?.toFixed() ?? 0).minus(
+          dec(prevRow?._sum.amountOut?.toFixed() ?? 0),
+        );
+        const manualOpening = openingByKey.get(`${side}:${currency}`) ?? dec(0);
+        const opening = manualOpening.plus(prevNet);
+
         const row = movements.find((m) => m.side === side && m.currency === currency);
         const net = netCashApAr(
-          openingByKey.get(`${side}:${currency}`) ?? dec(0),
+          opening,
           dec(row?._sum.amountIn?.toFixed() ?? 0),
           dec(row?._sum.amountOut?.toFixed() ?? 0),
         );
@@ -129,24 +142,31 @@ export class LedgerService {
    * ---------------------------------------------------------------- */
 
   /** ຍອດລວມ AP (GOLD) ແລະ AR (GOLD), with the baht equivalent (§8.1). */
-  async goldApArSummary() {
-    const day = await this.businessDay.current();
+  async goldApArSummary(asOfDate?: Date) {
+    const today = asOfDate
+      ? BusinessDayService.toDateOnly(asOfDate)
+      : BusinessDayService.toDateOnly();
 
-    const [openings, movements] = await Promise.all([
-      this.prisma.goldApArOpening.findMany({ where: { businessDayId: day.id } }),
+    const [prevMovements, todayMovements] = await Promise.all([
       this.prisma.goldApArLedger.groupBy({
         by: ['side'],
-        where: { businessDate: BusinessDayService.toDateOnly(), deletedAt: null },
+        where: { businessDate: { lt: today }, deletedAt: null },
+        _sum: { goldInG: true, goldOutG: true },
+      }),
+      this.prisma.goldApArLedger.groupBy({
+        by: ['side'],
+        where: { businessDate: today, deletedAt: null },
         _sum: { goldInG: true, goldOutG: true },
       }),
     ]);
 
     return (['AP', 'AR'] as const).map((side) => {
-      const start = openings
-        .filter((o) => o.side === side)
-        .reduce((sum, o) => sum.plus(dec(o.openingWeightG.toFixed())), dec(0));
+      const prevRow = prevMovements.find((m) => m.side === side);
+      const start = dec(prevRow?._sum.goldInG?.toFixed() ?? 0).minus(
+        dec(prevRow?._sum.goldOutG?.toFixed() ?? 0),
+      );
 
-      const row = movements.find((m) => m.side === side);
+      const row = todayMovements.find((m) => m.side === side);
       const summary = summariseGoldApAr(
         start,
         dec(row?._sum.goldInG?.toFixed() ?? 0),
@@ -171,8 +191,10 @@ export class LedgerService {
    * under the §8.4 pair — carries no balance of its own, so showing it would
    * be a permanent row of zeros next to the real counterparties.
    */
-  async goldApArByPartner() {
-    const day = await this.businessDay.current();
+  async goldApArByPartner(asOfDate?: Date) {
+    const today = asOfDate
+      ? BusinessDayService.toDateOnly(asOfDate)
+      : BusinessDayService.toDateOnly();
 
     // A partner earns a row by being the target some rule actually books onto
     // — its own `partnerId`, or the `counterpartyId` that overrides it. Asking
@@ -184,7 +206,7 @@ export class LedgerService {
     });
     const holdsBalance = new Set(rules.map((r) => r.counterpartyId ?? r.partnerId));
 
-    const [partners, openings, movements] = await Promise.all([
+    const [partners, prevMovements, todayMovements] = await Promise.all([
       this.prisma.partnerSource.findMany({
         where: {
           tracksGoldApAr: true,
@@ -193,22 +215,28 @@ export class LedgerService {
         },
         orderBy: { sortOrder: 'asc' },
       }),
-      this.prisma.goldApArOpening.findMany({ where: { businessDayId: day.id } }),
       this.prisma.goldApArLedger.groupBy({
         by: ['partnerId', 'side'],
-        where: { businessDate: BusinessDayService.toDateOnly(), deletedAt: null },
+        where: { businessDate: { lt: today }, deletedAt: null },
+        _sum: { goldInG: true, goldOutG: true },
+      }),
+      this.prisma.goldApArLedger.groupBy({
+        by: ['partnerId', 'side'],
+        where: { businessDate: today, deletedAt: null },
         _sum: { goldInG: true, goldOutG: true },
       }),
     ]);
 
     return partners.flatMap((partner) =>
       (['AP', 'AR'] as const).map((side) => {
-        const opening = openings.find((o) => o.partnerId === partner.id && o.side === side);
-        const row = movements.find((m) => m.partnerId === partner.id && m.side === side);
+        const prevRow = prevMovements.find((m) => m.partnerId === partner.id && m.side === side);
+        const todayRow = todayMovements.find((m) => m.partnerId === partner.id && m.side === side);
 
-        const broughtForward = dec(opening?.openingWeightG.toFixed() ?? 0);
-        const increases = dec(row?._sum.goldInG?.toFixed() ?? 0);
-        const decreases = dec(row?._sum.goldOutG?.toFixed() ?? 0);
+        const broughtForward = dec(prevRow?._sum.goldInG?.toFixed() ?? 0).minus(
+          dec(prevRow?._sum.goldOutG?.toFixed() ?? 0),
+        );
+        const increases = dec(todayRow?._sum.goldInG?.toFixed() ?? 0);
+        const decreases = dec(todayRow?._sum.goldOutG?.toFixed() ?? 0);
 
         return {
           partnerId: partner.id,
@@ -273,7 +301,7 @@ export class LedgerService {
         this.cash.bankBalances(asOf),
         // ມື້ທີ່ບໍ່ເຄີຍເປີດ: ສົ່ງ id ທີ່ບໍ່ກົງກັບແຖວໃດ ແລ້ວໄດ້ຍອດ 0 ຜ່ານເສັ້ນທາງດຽວກັນ.
         this.cashApAr(day ?? { id: '—', date: asOf! }),
-        this.goldApArSummary(),
+        this.goldApArSummary(asOf),
         this.stockLedger.currentWac(this.prisma, asOf),
         this.advance.netByCurrency(this.prisma, asOf),
       ]);

@@ -119,7 +119,15 @@ let AdvanceService = class AdvanceService {
                 where,
                 include: {
                     // The View detail in §7 needs the full order context.
-                    order: { include: { customer: true, goldItem: true, supplier: true } },
+                    order: {
+                        include: {
+                            customer: true,
+                            goldItem: true,
+                            supplier: true,
+                            receipts: true,
+                            lines: { include: { goldItem: true }, orderBy: { sortOrder: 'asc' } },
+                        },
+                    },
                     bankAccount: true,
                 },
                 orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],

@@ -58,6 +58,12 @@ export class IncomeExpenseLineDto {
  * query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400 ເຖິງແມ່ນ handler ຈະອ່ານມັນດ້ວຍ
  * `@Query('...')` ກໍຕາມ.
  */
+export class IncomeExpenseSummaryDto extends HistoryRangeDto {
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'date ຕ້ອງເປັນຮູບແບບ YYYY-MM-DD' })
+  date?: string;
+}
+
 export class IncomeExpenseHistoryDto extends HistoryRangeDto {
   @IsOptional() @IsIn(['INCOME', 'EXPENSE']) kind?: 'INCOME' | 'EXPENSE';
 }
@@ -86,6 +92,15 @@ export class CreateIncomeExpenseDto {
 }
 
 /** §3.7 — Module ຝາກສິນຄ້າ */
+export class UpdateIncomeExpenseDto {
+  @IsOptional() @IsString() categoryId?: string;
+  @IsOptional() @IsIn(['CASH', 'BANK']) method?: 'CASH' | 'BANK';
+  @IsOptional() @IsString() bankAccountId?: string | null;
+  @IsOptional() @IsIn(['LAK', 'THB', 'USD']) currency?: 'LAK' | 'THB' | 'USD';
+  @IsOptional() @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount?: string;
+  @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
+}
+
 export class ConsignmentLineDto {
   @IsString() @MinLength(1) nameLo: string;
   @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG: string;
