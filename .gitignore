@@ -7,3 +7,6 @@ node_modules/
 .agent/
 .agents/
 .shared/
+node_modules/
+dist/
+*.sql
