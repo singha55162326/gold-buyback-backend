@@ -418,7 +418,20 @@ let StockService = class StockService {
      */
     async listFactoryTracking(query, user) {
         const range = this.range.resolve(query, user);
-        const where = { createdAt: history_range_service_1.HistoryRangeService.window(range) };
+        /*
+         * ຄິວລໍຖ້າປະເມີນ ບໍ່ແມ່ນລາຍການປະຫວັດ — ມັນຍັງຄ້າງຢູ່ຈົນກວ່າ FACTORY ຈະຕອບ,
+         * ເຊິ່ງອາດເປັນອາທິດ. ຖ້າເອົາຊ່ວງວັນທີເລີ່ມຕົ້ນ (= ມື້ນີ້) ມາກອງມັນ ແຖວທີ່
+         * ອະນຸມັດມື້ວານຈະຫາຍໄປທັນທີທີ່ຂຶ້ນມື້ໃໝ່ ທັງທີ່ຍັງບໍ່ທັນໄດ້ເຮັດ.
+         *
+         * ສະນັ້ນ: ຂໍຄິວມາລ້າໆ (`status=AWAITING_ASSESSMENT` ບໍ່ມີວັນທີ) = ເອົາທຸກແຖວ
+         * ທີ່ຍັງຄ້າງ. ຖ້າຜູ້ໃຊ້ລະບຸວັນທີເອງ ກໍ່ກອງຕາມນັ້ນ — ບໍ່ມີການມິດງຽບ.
+         */
+        const explicitRange = Boolean(query.from_date ?? query.fromDate ?? query.to_date ?? query.toDate);
+        const openQueue = query.status === 'AWAITING_ASSESSMENT' && !explicitRange;
+        const where = {
+            ...(openQueue ? {} : { createdAt: history_range_service_1.HistoryRangeService.window(range) }),
+            ...(query.status ? { status: query.status } : {}),
+        };
         const [rows, total] = await this.prisma.$transaction([
             this.prisma.factoryOutTracking.findMany({
                 where,

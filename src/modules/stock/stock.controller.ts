@@ -18,6 +18,7 @@ import {
   CreateStockOutDto,
   CreateTransferDto,
   FactoryAssessmentDto,
+  FactoryTrackingQueryDto,
   ReviewStockDto,
 } from './dto/stock.dto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -96,9 +97,16 @@ export class StockController {
 
   /* ---- §7.3 FACTORY tracking ---- */
 
-  // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ກວ້າງອອກໄດ້ຕາມສິດ (ບັງຄັບຢູ່ service).
+  /*
+   * ສອງທາງ: `status=AWAITING_ASSESSMENT` ບໍ່ມີວັນທີ = ຄິວທີ່ຍັງຄ້າງທັງໝົດ;
+   * ສົ່ງວັນທີມາ = ປະຫວັດຕາມຊ່ວງນັ້ນ. ຄ່າເລີ່ມຕົ້ນຍັງເປັນມື້ນີ້ ແລະ ຍັງກວ້າງ
+   * ອອກໄດ້ຕາມສິດ (ບັງຄັບຢູ່ service).
+   */
   @Get('factory')
-  listFactoryTracking(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+  listFactoryTracking(
+    @Query() query: FactoryTrackingQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.stock.listFactoryTracking(query, user);
   }
 

@@ -94,6 +94,20 @@ export class FactoryAssessmentDto {
 }
 
 /**
+ * ຕົວກອງຂອງໜ້າຕິດຕາມ FACTORY (TOR §7.3).
+ *
+ * ຕ້ອງສືບທອດ `HistoryRangeDto` ເພາະ ValidationPipe ຕັ້ງ `forbidNonWhitelisted`
+ * ໄວ້: query ໃດທີ່ບໍ່ມີໃນ DTO ຈະຖືກປະຕິເສດ 400.
+ */
+export class FactoryTrackingQueryDto extends HistoryRangeDto {
+  @IsOptional()
+  @IsIn(['AWAITING_ASSESSMENT', 'COMPLETED'], {
+    message: 'ສະຖານະຕ້ອງເປັນ AWAITING_ASSESSMENT ຫຼື COMPLETED',
+  })
+  status?: 'AWAITING_ASSESSMENT' | 'COMPLETED';
+}
+
+/**
  * ມອບຄຳລະຫວ່າງມື້ (TOR §4.2).
  *
  * ສອງຮູບແບບໃນ DTO ດຽວ ເພາະເປັນທຸລະກຳອັນດຽວກັນໃນສາຍຕາລູກຄ້າ:

@@ -61,7 +61,11 @@ let StockController = class StockController {
         return this.stock.transfer(dto, user);
     }
     /* ---- §7.3 FACTORY tracking ---- */
-    // ຄ່າເລີ່ມຕົ້ນ = ມື້ນີ້; ກວ້າງອອກໄດ້ຕາມສິດ (ບັງຄັບຢູ່ service).
+    /*
+     * ສອງທາງ: `status=AWAITING_ASSESSMENT` ບໍ່ມີວັນທີ = ຄິວທີ່ຍັງຄ້າງທັງໝົດ;
+     * ສົ່ງວັນທີມາ = ປະຫວັດຕາມຊ່ວງນັ້ນ. ຄ່າເລີ່ມຕົ້ນຍັງເປັນມື້ນີ້ ແລະ ຍັງກວ້າງ
+     * ອອກໄດ້ຕາມສິດ (ບັງຄັບຢູ່ service).
+     */
     listFactoryTracking(query, user) {
         return this.stock.listFactoryTracking(query, user);
     }
@@ -198,7 +202,7 @@ __decorate([
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
+    __metadata("design:paramtypes", [stock_dto_1.FactoryTrackingQueryDto, Object]),
     __metadata("design:returntype", void 0)
 ], StockController.prototype, "listFactoryTracking", null);
 __decorate([
