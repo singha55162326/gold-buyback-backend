@@ -6,8 +6,7 @@ import { setupSwagger } from './swagger';
 import { assertShopTimezone } from './common/shop-timezone';
 
 async function bootstrap(): Promise<void> {
-  // Before anything can record a transaction,
-  // make sure the host can date it.
+  // Check shop timezone before anything can record a transaction.
   assertShopTimezone();
 
   const app = await NestFactory.create(AppModule);
@@ -15,27 +14,9 @@ async function bootstrap(): Promise<void> {
   // Global API prefix
   app.setGlobalPrefix('api');
 
-  // CORS
-  const allowedOrigins = (process.env.CORS_ORIGIN ?? '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
+  // CORS - Allow ALL origins
   app.enableCors({
-    origin: (origin: string, callback: (arg0: Error | null, arg1: boolean) => any) => {
-      // Allow requests without Origin header
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error(`CORS blocked: ${origin}`), false);
-    },
-
-    credentials: true,
+    origin: '*',
 
     methods: [
       'GET',
@@ -54,6 +35,13 @@ async function bootstrap(): Promise<void> {
       'Origin',
       'X-Requested-With',
     ],
+
+    exposedHeaders: [
+      'Content-Length',
+      'Content-Range',
+    ],
+
+    optionsSuccessStatus: 204,
   });
 
   // Global validation
@@ -68,13 +56,12 @@ async function bootstrap(): Promise<void> {
   // Swagger
   setupSwagger(app);
 
-  // Listen on all network interfaces
+  // Start API
   const port = process.env.API_PORT || 4000;
 
   await app.listen(port, '0.0.0.0');
 
-  Logger.log(`API running on http://0.0.0.0:${port}`);
-  Logger.log(`Allowed CORS origins: ${allowedOrigins.join(', ')}`);
+  Logger.log(`API running on port ${port}`);
 }
 
 bootstrap();

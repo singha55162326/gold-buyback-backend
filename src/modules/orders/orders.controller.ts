@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import type { OrderStatus } from '@prisma/client';
 import { OrdersService } from './orders.service';
 import {
@@ -6,6 +6,7 @@ import {
   ListOrderDto,
   ReceiveOrderDto,
   UpdateOrderStatusDto,
+  UpdateOrderDto,
 } from './dto/order.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -61,4 +62,21 @@ export class OrdersController {
   ) {
     return this.orders.addReceipt(id, dto, user);
   }
+
+  @Roles('ADMIN')
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.orders.update(id, dto, user);
+  }
+
+  @Roles('ADMIN')
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.remove(id, user);
+  }
+
 }

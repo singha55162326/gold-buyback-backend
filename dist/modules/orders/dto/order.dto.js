@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ReceiveOrderDto = exports.UpdateOrderStatusDto = exports.CreateOrderDto = exports.ListOrderDto = exports.OrderLineDto = exports.OrderReceiptLinesDto = exports.OrderReceiptDto = void 0;
+exports.UpdateOrderDto = exports.ReceiveOrderDto = exports.UpdateOrderStatusDto = exports.CreateOrderDto = exports.ListOrderDto = exports.OrderLineDto = exports.OrderReceiptLinesDto = exports.OrderReceiptDto = void 0;
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
@@ -309,4 +309,89 @@ __decorate([
     (0, class_transformer_1.Type)(() => OrderReceiptDto),
     __metadata("design:type", Array)
 ], ReceiveOrderDto.prototype, "receipts", void 0);
+class UpdateOrderDto {
+    phone;
+    billNo;
+    productType;
+    staffName;
+    supplierId;
+    note;
+    totalAmount;
+    status;
+    lines;
+    receipts;
+    static _OPENAPI_METADATA_FACTORY() {
+        return { phone: { required: false, type: () => String }, billNo: { required: false, type: () => String }, productType: { required: false, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: false, type: () => String }, supplierId: { required: false, type: () => String, nullable: true }, note: { required: false, type: () => String, nullable: true, maxLength: 500 }, totalAmount: { required: false, type: () => String }, status: { required: false, enum: ["COMPLETED", "CANCELLED", "ORDER_PLACED", "SENT_TO_SMITH", "RECEIVED_FROM_SMITH", "AWAITING_PICKUP"], enum: [
+                    'ORDER_PLACED',
+                    'SENT_TO_SMITH',
+                    'RECEIVED_FROM_SMITH',
+                    'AWAITING_PICKUP',
+                    'COMPLETED',
+                    'CANCELLED',
+                ] }, lines: { required: false, type: () => [require("./order.dto").OrderLineDto] }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto] } };
+    }
+}
+exports.UpdateOrderDto = UpdateOrderDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "phone", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "billNo", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['IT', 'ITP']),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "productType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "staffName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", Object)
+], UpdateOrderDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
+    __metadata("design:type", Object)
+], UpdateOrderDto.prototype, "note", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຍອດລວມ' }),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "totalAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)([
+        'ORDER_PLACED',
+        'SENT_TO_SMITH',
+        'RECEIVED_FROM_SMITH',
+        'AWAITING_PICKUP',
+        'COMPLETED',
+        'CANCELLED',
+    ]),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "status", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => OrderLineDto),
+    __metadata("design:type", Array)
+], UpdateOrderDto.prototype, "lines", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => OrderReceiptDto),
+    __metadata("design:type", Array)
+], UpdateOrderDto.prototype, "receipts", void 0);
 //# sourceMappingURL=order.dto.js.map

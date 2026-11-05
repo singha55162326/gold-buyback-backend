@@ -28,6 +28,10 @@ import type {
   FactoryAssessmentDto,
   FactoryTrackingQueryDto,
   ReviewStockDto,
+  UpdateStockMovementDto,
+  UpdateSkuBalanceDto,
+  UpdateOldTypeBalanceDto,
+  UpdateOldLedgerRowDto,
 } from './dto/stock.dto';
 
 const D = (value: Decimal) => new Prisma.Decimal(value.toFixed());
@@ -184,6 +188,7 @@ export class StockService {
           currency: 'THB',
           amount: laborFeeThb,
           refId: movement.id,
+          partnerId,
           note: `ຄ່າແຮງຊ່າງ ${movement.code}`,
           createdById: user.id,
         });
@@ -242,11 +247,52 @@ export class StockService {
       if (!check.allowed) throw new BadRequestException(check.messageLo!);
     }
 
-    // OUT is costed at WAC, so the cost of goods sold reflects the blended
-    // acquisition price rather than whatever the newest purchase happened to be.
-    const wac = await this.stockLedger.currentWac();
-    const perG = wac.pricePerG;
-    const totalCost = totalGoldG.mul(perG);
+    // For Stock OUT:
+    // If scope is OLD, cost is based on the specific gold type balance from stockOldTypeBalance.
+    // If scope is NEW, cost is based on WAC.
+    let perG: Decimal;
+    let totalCost: Decimal;
+    const lineCosts: Decimal[] = [];
+
+    if (dto.scope === 'OLD') {
+      let accumulatedCost = dec(0);
+      for (const line of lines) {
+        if (!line.goldTypeId) {
+          lineCosts.push(dec(0));
+          continue;
+        }
+        const balance = await this.prisma.stockOldTypeBalance.findFirst({
+          where: { goldTypeId: line.goldTypeId },
+          orderBy: { updatedAt: 'desc' },
+        });
+        const closingWeight = toDec(balance?.closingWeightG);
+        const closingCost = toDec(balance?.closingCost);
+        let typeRate = dec(0);
+        if (closingWeight.gt(0) && closingCost.gt(0)) {
+          typeRate = closingCost.div(closingWeight);
+        } else {
+          const opWeight = toDec(balance?.openingWeightG);
+          const opCost = toDec(balance?.openingCost);
+          if (opWeight.gt(0) && opCost.gt(0)) {
+            typeRate = opCost.div(opWeight);
+          } else {
+            typeRate = (await this.stockLedger.currentWac()).pricePerG;
+          }
+        }
+        const lineCost = line.goldG.mul(typeRate);
+        lineCosts.push(lineCost);
+        accumulatedCost = accumulatedCost.plus(lineCost);
+      }
+      totalCost = accumulatedCost;
+      perG = totalGoldG.gt(0) ? totalCost.div(totalGoldG) : dec(0);
+    } else {
+      const wac = await this.stockLedger.currentWac();
+      perG = wac.pricePerG;
+      totalCost = totalGoldG.mul(perG);
+      for (const line of lines) {
+        lineCosts.push(line.goldG.mul(perG));
+      }
+    }
 
     const goldPercent = dto.goldPercent ? dec(dto.goldPercent) : null;
 
@@ -269,13 +315,13 @@ export class StockService {
         note: dto.note ?? null,
         createdById: user.id,
         lines: {
-          create: lines.map((line) => ({
+          create: lines.map((line, idx) => ({
             goldSkuId: line.goldSkuId ?? null,
             goldTypeId: line.goldTypeId ?? null,
             weightG: D(dec(line.weightG)),
             quantity: line.quantity,
             goldG: D(line.goldG),
-            cost: D(line.goldG.mul(perG)),
+            cost: D(lineCosts[idx]),
           })),
         },
       },
@@ -329,7 +375,7 @@ export class StockService {
     this.approval.assertTransition(movement.status, next);
 
     const day = await this.businessDay.current();
-    const isFactory = movement.partner.code === 'FACTORY';
+    const isFactory = movement.scope === 'OLD' && movement.partner.code === 'FACTORY';
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.decision === 'APPROVED') {
@@ -557,8 +603,18 @@ export class StockService {
     if (!tracking) throw new NotFoundException('ບໍ່ພົບລາຍການຕິດຕາມ');
 
     const assessed = dec(dto.factoryAssessedG);
+    if (assessed.gt(toDec(tracking.goldOutG))) {
+      throw new BadRequestException(
+        `ນ້ຳໜັກທີ່ FACTORY ປະເມີນ (${assessed.toFixed()} g) ຕ້ອງບໍ່ເກີນ ຄຳເກົ່າອອກລວມ (${toDec(tracking.goldOutG).toFixed()} g)`,
+      );
+    }
     if (!assessed.isFinite() || assessed.lte(0)) {
       throw new BadRequestException('ນ້ຳໜັກທີ່ FACTORY ປະເມີນຕ້ອງໃຫຍ່ກວ່າ 0');
+    }
+    if (assessed.gt(toDec(tracking.goldOutG))) {
+      throw new BadRequestException(
+        `ນ້ຳໜັກທີ່ FACTORY ປະເມີນ (${assessed.toFixed()} g) ຕ້ອງບໍ່ເກີນ ຄຳເກົ່າອອກລວມ (${toDec(tracking.goldOutG).toFixed()} g)`,
+      );
     }
 
     const wasCompleted = tracking.status === 'COMPLETED';
@@ -652,9 +708,33 @@ export class StockService {
       if (!check.allowed) throw new BadRequestException(check.messageLo!);
     }
 
-    const wac = await this.stockLedger.currentWac();
-    const perG = wac.pricePerG;
-    const totalCost = totalGoldG.mul(perG);
+    let perG: Decimal;
+    let totalCost: Decimal;
+
+    if (from === 'OLD') {
+      const balance = await this.prisma.stockOldTypeBalance.findFirst({
+        where: { goldTypeId: dto.goldTypeId },
+        orderBy: { updatedAt: 'desc' },
+      });
+      const closingWeight = toDec(balance?.closingWeightG);
+      const closingCost = toDec(balance?.closingCost);
+      if (closingWeight.gt(0) && closingCost.gt(0)) {
+        perG = closingCost.div(closingWeight);
+      } else {
+        const opWeight = toDec(balance?.openingWeightG);
+        const opCost = toDec(balance?.openingCost);
+        if (opWeight.gt(0) && opCost.gt(0)) {
+          perG = opCost.div(opWeight);
+        } else {
+          perG = (await this.stockLedger.currentWac()).pricePerG;
+        }
+      }
+      totalCost = totalGoldG.mul(perG);
+    } else {
+      const wac = await this.stockLedger.currentWac();
+      perG = wac.pricePerG;
+      totalCost = totalGoldG.mul(perG);
+    }
     const day = await this.businessDay.current();
 
     return this.prisma.$transaction(async (tx) => {
@@ -1116,6 +1196,19 @@ export class StockService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.stockNewLedger.findMany({
         where,
+        include: {
+          movement: {
+            include: {
+              lines: {
+                include: {
+                  goldSku: { include: { goldItem: true } },
+                  goldType: true,
+                },
+              },
+              partner: true,
+            },
+          },
+        },
         orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
         skip: range.skip,
         take: range.take,
@@ -1132,7 +1225,21 @@ export class StockService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.stockOldLedger.findMany({
         where,
-        include: { goldType: true },
+        include: {
+          goldType: true,
+          movement: {
+            include: {
+              lines: {
+                include: {
+                  goldSku: { include: { goldItem: true } },
+                  goldType: true,
+                  goldItem: true,
+                },
+              },
+              partner: true,
+            },
+          },
+        },
         orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
         skip: range.skip,
         take: range.take,
@@ -1144,6 +1251,7 @@ export class StockService {
 
   async oldBalances() {
     const day = await this.businessDay.current();
+    await this.ensureOldTypeBalancesForDay(day.id);
     return this.prisma.stockOldTypeBalance.findMany({
       where: { businessDayId: day.id },
       include: { goldType: true },
@@ -1153,11 +1261,93 @@ export class StockService {
 
   async newBalances() {
     const day = await this.businessDay.current();
+    await this.ensureSkuBalancesForDay(day.id);
     return this.prisma.stockNewSkuBalance.findMany({
       where: { businessDayId: day.id },
       include: { goldSku: { include: { goldItem: true } } },
       orderBy: { goldSku: { fullSkuName: 'asc' } },
     });
+  }
+
+  async ensureSkuBalancesForDay(businessDayId: string) {
+    const count = await this.prisma.stockNewSkuBalance.count({
+      where: { businessDayId },
+    });
+    if (count > 0) return;
+
+    const latestPrev = await this.prisma.stockNewSkuBalance.findFirst({
+      where: { businessDayId: { not: businessDayId } },
+      orderBy: { businessDay: { date: 'desc' } },
+      select: { businessDayId: true },
+    });
+    if (!latestPrev) return;
+
+    const prevBalances = await this.prisma.stockNewSkuBalance.findMany({
+      where: { businessDayId: latestPrev.businessDayId },
+    });
+
+    for (const b of prevBalances) {
+      await this.prisma.stockNewSkuBalance.upsert({
+        where: {
+          businessDayId_goldSkuId: {
+            businessDayId,
+            goldSkuId: b.goldSkuId,
+          },
+        },
+        update: {},
+        create: {
+          businessDayId,
+          goldSkuId: b.goldSkuId,
+          openingQty: b.balanceQty,
+          inQty: 0,
+          outQty: 0,
+          balanceQty: b.balanceQty,
+          totalWeightG: b.totalWeightG,
+        },
+      });
+    }
+  }
+
+  async ensureOldTypeBalancesForDay(businessDayId: string) {
+    const count = await this.prisma.stockOldTypeBalance.count({
+      where: { businessDayId },
+    });
+    if (count > 0) return;
+
+    const latestPrev = await this.prisma.stockOldTypeBalance.findFirst({
+      where: { businessDayId: { not: businessDayId } },
+      orderBy: { businessDay: { date: 'desc' } },
+      select: { businessDayId: true },
+    });
+    if (!latestPrev) return;
+
+    const prevBalances = await this.prisma.stockOldTypeBalance.findMany({
+      where: { businessDayId: latestPrev.businessDayId },
+    });
+
+    for (const b of prevBalances) {
+      await this.prisma.stockOldTypeBalance.upsert({
+        where: {
+          businessDayId_goldTypeId: {
+            businessDayId,
+            goldTypeId: b.goldTypeId,
+          },
+        },
+        update: {},
+        create: {
+          businessDayId,
+          goldTypeId: b.goldTypeId,
+          openingWeightG: b.closingWeightG,
+          openingCost: b.closingCost,
+          inG: new Prisma.Decimal(0),
+          outG: new Prisma.Decimal(0),
+          priceIn: new Prisma.Decimal(0),
+          priceOut: new Prisma.Decimal(0),
+          closingWeightG: b.closingWeightG,
+          closingCost: b.closingCost,
+        },
+      });
+    }
   }
 
   /**
@@ -1449,4 +1639,875 @@ export class StockService {
         : await client.stockMovement.count({ where: { code: { startsWith: prefix } } });
     return `${prefix}-${String(count + 1).padStart(3, '0')}`;
   }
+
+  /* ---------------------------------------------------------------- *
+   * Task 1: Movement View, Edit, Delete & SkuBalance Edit
+   * ---------------------------------------------------------------- */
+
+  async getMovement(id: string) {
+    const movement = await this.prisma.stockMovement.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        lines: {
+          include: {
+            goldSku: { include: { goldItem: true } },
+            goldType: true,
+            goldItem: true,
+          },
+        },
+        partner: true,
+        cabinet: true,
+      },
+    });
+    if (!movement) throw new NotFoundException('ບໍ່ພົບລາຍການເຄື່ອນໄຫວສາງ');
+
+    const actorIds = [movement.createdById, movement.approvedById].filter(
+      (uid): uid is string => Boolean(uid),
+    );
+    const users = actorIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: actorIds } },
+          select: { id: true, fullName: true },
+        })
+      : [];
+    const nameMap = new Map(users.map((u) => [u.id, u.fullName]));
+
+    return {
+      ...movement,
+      createdByName: nameMap.get(movement.createdById) ?? '—',
+      approvedByName: movement.approvedById ? (nameMap.get(movement.approvedById) ?? '—') : null,
+    };
+  }
+
+  async updateMovement(id: string, dto: UpdateStockMovementDto, user: AuthenticatedUser) {
+    const movement = await this.prisma.stockMovement.findFirst({
+      where: { id, deletedAt: null },
+      include: { lines: true, partner: true },
+    });
+    if (!movement) throw new NotFoundException('ບໍ່ພົບລາຍການເຄື່ອນໄຫວສາງ');
+
+    const day = await this.businessDay.current();
+
+    return this.prisma.$transaction(async (tx) => {
+      let partner = movement.partner;
+      if (dto.partnerId && dto.partnerId !== movement.partnerId) {
+        partner = await tx.partnerSource.findUnique({ where: { id: dto.partnerId } });
+        if (!partner) throw new NotFoundException('ບໍ່ພົບແຫຼ່ງ');
+      }
+
+      let totalGoldG = toDec(movement.totalGoldG);
+      let totalQuantity = movement.totalQuantity;
+      let totalCost = toDec(movement.totalCost);
+      let perG = toDec(movement.pricePerG);
+
+      let parsedLines: Array<{
+        goldSkuId?: string;
+        goldTypeId?: string;
+        goldItemId?: string;
+        oldCategory?: 'JEWELRY' | 'BAR';
+        weightG: string;
+        quantity: number;
+        goldG: Decimal;
+      }> | null = null;
+
+      // If lines updated
+      if (dto.lines && dto.lines.length > 0) {
+        parsedLines = dto.lines.map((line) => ({
+          ...line,
+          goldG: lineGoldWeight(line.weightG, line.quantity),
+        }));
+        const newGoldG = parsedLines.reduce((sum, l) => sum.plus(l.goldG), dec(0));
+        const newQuantity = parsedLines.reduce((sum, l) => sum + l.quantity, 0);
+
+        if (newGoldG.lte(0)) throw new BadRequestException('ນ້ຳໜັກລວມຕ້ອງໃຫຍ່ກວ່າ 0');
+
+        // Reverse old lines from SKU balance if scope NEW
+        if (
+          movement.scope === 'NEW' &&
+          (movement.status === 'COMPLETED' || movement.status === 'APPROVED')
+        ) {
+          for (const line of movement.lines) {
+            if (!line.goldSkuId) continue;
+            const bal = await tx.stockNewSkuBalance.findUnique({
+              where: {
+                businessDayId_goldSkuId: { businessDayId: day.id, goldSkuId: line.goldSkuId },
+              },
+            });
+            if (bal) {
+              const inQty = movement.type === 'IN' ? Math.max(0, bal.inQty - line.quantity) : bal.inQty;
+              const outQty = movement.type !== 'IN' ? Math.max(0, bal.outQty - line.quantity) : bal.outQty;
+              const balanceQty = bal.openingQty + inQty - outQty;
+              const sku = await tx.goldSku.findUnique({ where: { id: line.goldSkuId } });
+              const totalWeightG = dec(sku?.weightG ?? 0).mul(balanceQty);
+              await tx.stockNewSkuBalance.update({
+                where: { id: bal.id },
+                data: { inQty, outQty, balanceQty, totalWeightG: D(totalWeightG) },
+              });
+            }
+          }
+
+          // Apply new lines to SKU balance
+          for (const line of parsedLines) {
+            if (!line.goldSkuId) continue;
+            const key = {
+              businessDayId_goldSkuId: { businessDayId: day.id, goldSkuId: line.goldSkuId },
+            };
+            const existing = await tx.stockNewSkuBalance.findUnique({ where: key });
+            const openingQty = existing?.openingQty ?? 0;
+            const inQty = (existing?.inQty ?? 0) + (movement.type === 'IN' ? line.quantity : 0);
+            const outQty = (existing?.outQty ?? 0) + (movement.type !== 'IN' ? line.quantity : 0);
+            const balanceQty = openingQty + inQty - outQty;
+            const sku = await tx.goldSku.findUnique({ where: { id: line.goldSkuId } });
+            const totalWeightG = dec(sku?.weightG ?? 0).mul(balanceQty);
+            await tx.stockNewSkuBalance.upsert({
+              where: key,
+              update: { inQty, outQty, balanceQty, totalWeightG: D(totalWeightG) },
+              create: {
+                businessDayId: day.id,
+                goldSkuId: line.goldSkuId,
+                openingQty,
+                inQty,
+                outQty,
+                balanceQty,
+                totalWeightG: D(totalWeightG),
+              },
+            });
+          }
+        }
+
+        totalGoldG = newGoldG;
+        totalQuantity = newQuantity;
+
+        if (movement.type === 'IN') {
+          totalCost = dto.totalCost ? dec(dto.totalCost) : totalCost;
+          perG = totalGoldG.gt(0) ? totalCost.div(totalGoldG) : dec(0);
+        } else {
+          totalCost = totalGoldG.mul(perG);
+        }
+
+        // Replace lines in database
+        await tx.stockMovementLine.deleteMany({ where: { movementId: id } });
+        await tx.stockMovementLine.createMany({
+          data: parsedLines.map((l) => ({
+            movementId: id,
+            goldSkuId: l.goldSkuId ?? null,
+            goldTypeId: dto.goldTypeId ?? l.goldTypeId ?? null,
+            goldItemId: l.goldItemId ?? null,
+            oldCategory: l.oldCategory ?? null,
+            weightG: D(dec(l.weightG)),
+            quantity: l.quantity,
+            goldG: D(l.goldG),
+            cost: D(l.goldG.mul(perG)),
+          })),
+        });
+      } else if (dto.totalCost && movement.type === 'IN') {
+        totalCost = dec(dto.totalCost);
+        perG = totalGoldG.gt(0) ? totalCost.div(totalGoldG) : dec(0);
+      }
+
+      const laborFeeThb =
+        dto.laborFeeThb !== undefined ? dec(dto.laborFeeThb) : toDec(movement.laborFeeThb);
+
+      const nextGoldPercent =
+        dto.goldPercent !== undefined
+          ? dto.goldPercent
+            ? dec(dto.goldPercent)
+            : null
+          : movement.goldPercent
+            ? toDec(movement.goldPercent)
+            : null;
+      const nextTransformType =
+        dto.transformType !== undefined ? dto.transformType : movement.transformType;
+
+      const updated = await tx.stockMovement.update({
+        where: { id },
+        data: {
+          partnerId: partner?.id ?? movement.partnerId,
+          transformType: nextTransformType,
+          goldPercent: nextGoldPercent ? D(nextGoldPercent) : null,
+          expectedReturnG: nextGoldPercent ? D(expectedReturnWeight(totalGoldG, nextGoldPercent)) : null,
+          totalGoldG: D(totalGoldG),
+          totalQuantity,
+          totalCost: D(totalCost),
+          pricePerG: D(perG),
+          pricePerBaht: D(pricePerBaht(perG)),
+          laborFeeThb: D(laborFeeThb),
+          note: dto.note !== undefined ? dto.note : movement.note,
+        },
+      });
+
+      // Update StockNewLedger row
+      await tx.stockNewLedger.updateMany({
+        where: { movementId: id, deletedAt: null },
+        data: {
+          partnerLabel: partner?.nameLo ?? movement.partner?.nameLo,
+          goldInG: movement.type === 'IN' ? D(totalGoldG) : D(dec(0)),
+          goldOutG: movement.type !== 'IN' ? D(totalGoldG) : D(dec(0)),
+          priceIn: movement.type === 'IN' ? D(totalCost) : D(dec(0)),
+          priceOut: movement.type !== 'IN' ? D(totalCost) : D(dec(0)),
+        },
+      });
+      await this.recomputeNewLedgerRunningTotals(tx);
+
+      // Update StockOldLedger rows and StockOldTypeBalance if applicable
+      const oldLedgerRows = await tx.stockOldLedger.findMany({
+        where: { movementId: id, deletedAt: null },
+        orderBy: { sequence: 'asc' },
+      });
+
+      if (oldLedgerRows.length > 0) {
+        // 1. Reverse existing oldLedgerRows from StockOldTypeBalance
+        for (const r of oldLedgerRows) {
+          await this.adjustOldTypeBalance(tx, day.id, r.goldTypeId, {
+            inDelta: toDec(r.goldInG).neg(),
+            outDelta: toDec(r.goldOutG).neg(),
+            priceInDelta: toDec(r.priceIn).neg(),
+            priceOutDelta: toDec(r.priceOut).neg(),
+          });
+        }
+
+        // 2. Build new StockOldLedger entries
+        const partnerLabel =
+          movement.type === 'TRANSFER'
+            ? null
+            : (partner?.nameLo ?? movement.partner?.nameLo ?? oldLedgerRows[0].partnerLabel);
+
+        const newOldEntries: Array<{
+          goldTypeId: string;
+          goldInG: Decimal;
+          goldOutG: Decimal;
+          priceIn: Decimal;
+          priceOut: Decimal;
+        }> = [];
+
+        if (movement.type === 'TRANSFER') {
+          const isInOld = movement.scope === 'NEW'; // NEW_TO_OLD puts gold IN to OLD
+          const gtId =
+            dto.goldTypeId ??
+            parsedLines?.[0]?.goldTypeId ??
+            movement.lines[0]?.goldTypeId ??
+            oldLedgerRows[0].goldTypeId;
+          newOldEntries.push({
+            goldTypeId: gtId,
+            goldInG: isInOld ? totalGoldG : dec(0),
+            goldOutG: !isInOld ? totalGoldG : dec(0),
+            priceIn: isInOld ? totalCost : dec(0),
+            priceOut: !isInOld ? totalCost : dec(0),
+          });
+        } else {
+          const effectiveLines = parsedLines
+            ? parsedLines.map((l) => ({
+                goldTypeId: dto.goldTypeId ?? l.goldTypeId ?? oldLedgerRows[0].goldTypeId,
+                goldG: l.goldG,
+                cost: l.goldG.mul(perG),
+              }))
+            : movement.lines.map((l) => ({
+                goldTypeId: dto.goldTypeId ?? l.goldTypeId ?? oldLedgerRows[0].goldTypeId,
+                goldG: toDec(l.goldG),
+                cost: toDec(l.goldG).mul(perG),
+              }));
+
+          for (const l of effectiveLines) {
+            if (!l.goldTypeId) continue;
+            newOldEntries.push({
+              goldTypeId: l.goldTypeId,
+              goldInG: movement.type === 'IN' ? l.goldG : dec(0),
+              goldOutG: movement.type !== 'IN' ? l.goldG : dec(0),
+              priceIn: movement.type === 'IN' ? l.cost : dec(0),
+              priceOut: movement.type !== 'IN' ? l.cost : dec(0),
+            });
+          }
+        }
+
+        const now = new Date();
+        const maxLen = Math.max(oldLedgerRows.length, newOldEntries.length);
+        for (let i = 0; i < maxLen; i++) {
+          const existingRow = oldLedgerRows[i];
+          const entry = newOldEntries[i];
+          if (existingRow && entry) {
+            await tx.stockOldLedger.update({
+              where: { id: existingRow.id },
+              data: {
+                goldTypeId: entry.goldTypeId,
+                partnerLabel,
+                goldInG: D(entry.goldInG),
+                goldOutG: D(entry.goldOutG),
+                priceIn: D(entry.priceIn),
+                priceOut: D(entry.priceOut),
+              },
+            });
+          } else if (existingRow && !entry) {
+            await tx.stockOldLedger.update({
+              where: { id: existingRow.id },
+              data: { deletedAt: now },
+            });
+          } else if (!existingRow && entry) {
+            const baseRow = oldLedgerRows[0];
+            const lastSeq = await tx.stockOldLedger.findFirst({
+              where: { businessDate: baseRow.businessDate },
+              orderBy: { sequence: 'desc' },
+            });
+            await tx.stockOldLedger.create({
+              data: {
+                movementId: id,
+                goldTypeId: entry.goldTypeId,
+                businessDate: baseRow.businessDate,
+                partnerLabel,
+                typeLabel: baseRow.typeLabel,
+                goldInG: D(entry.goldInG),
+                goldOutG: D(entry.goldOutG),
+                priceIn: D(entry.priceIn),
+                priceOut: D(entry.priceOut),
+                weightG: D(dec(0)),
+                cost: D(dec(0)),
+                sequence: (lastSeq?.sequence ?? 0) + 1,
+                createdById: user.id,
+              },
+            });
+          }
+        }
+
+        // 3. Apply newOldEntries to StockOldTypeBalance
+        for (const entry of newOldEntries) {
+          await this.adjustOldTypeBalance(tx, day.id, entry.goldTypeId, {
+            inDelta: entry.goldInG,
+            outDelta: entry.goldOutG,
+            priceInDelta: entry.priceIn,
+            priceOutDelta: entry.priceOut,
+          });
+        }
+
+        // 4. Recompute running totals in StockOldLedger
+        await this.recomputeOldLedgerRunningTotals(tx);
+      }
+
+      // Update GoldApArLedger row if exists
+      const aparRow = await tx.goldApArLedger.findFirst({
+        where: { movementId: id, deletedAt: null },
+      });
+      if (aparRow) {
+        const pId = partner?.id ?? movement.partnerId;
+        if (pId) {
+          await tx.goldApArLedger.update({
+            where: { id: aparRow.id },
+            data: {
+              partnerId: pId,
+              goldInG: movement.type === 'IN' ? D(totalGoldG) : D(dec(0)),
+              goldOutG: movement.type !== 'IN' ? D(totalGoldG) : D(dec(0)),
+              priceIn: movement.type === 'IN' ? D(totalCost) : D(dec(0)),
+              priceOut: movement.type !== 'IN' ? D(totalCost) : D(dec(0)),
+            },
+          });
+          await this.recomputeGoldApArRunningTotals(tx, pId, aparRow.side as 'AP' | 'AR');
+        }
+      }
+
+      // Update CashApArLedger row for labor fee if exists or create if needed
+      const cashAparRow = await tx.cashApArLedger.findFirst({
+        where: { refId: id, refType: 'LABOR_PAYABLE', deletedAt: null },
+      });
+      const cashPartnerId = partner?.id ?? movement.partnerId;
+      if (cashAparRow) {
+        if (laborFeeThb.gt(0)) {
+          await tx.cashApArLedger.update({
+            where: { id: cashAparRow.id },
+            data: {
+              partnerId: cashPartnerId ?? undefined,
+              amountIn: D(laborFeeThb),
+            },
+          });
+        } else {
+          await tx.cashApArLedger.update({
+            where: { id: cashAparRow.id },
+            data: { deletedAt: new Date() },
+          });
+        }
+      } else if (movement.type === 'IN' && laborFeeThb.gt(0)) {
+        await this.apar.postCash(tx, {
+          reason: 'LABOR_PAYABLE',
+          currency: 'THB',
+          amount: laborFeeThb,
+          refId: movement.id,
+          partnerId: cashPartnerId ?? undefined,
+          note: `ຄ່າແຮງຊ່າງ ${movement.code}`,
+          createdById: user.id,
+        });
+      }
+
+      await this.audit.record(
+        {
+          actorId: user.id,
+          action: 'UPDATE',
+          entity: 'StockMovement',
+          entityId: id,
+          before: {
+            partnerId: movement.partnerId,
+            totalGoldG: movement.totalGoldG.toFixed(),
+            totalCost: movement.totalCost.toFixed(),
+          },
+          after: {
+            partnerId: partner?.id ?? movement.partnerId,
+            totalGoldG: totalGoldG.toFixed(),
+            totalCost: totalCost.toFixed(),
+          },
+          summary: `ແກ້ໄຂການເຄື່ອນໄຫວສາງ ${movement.code} — ${totalGoldG.toFixed()} g`,
+        },
+        tx,
+      );
+
+      return updated;
+    });
+  }
+
+  async deleteMovement(id: string, user: AuthenticatedUser) {
+    const movement = await this.prisma.stockMovement.findFirst({
+      where: { id, deletedAt: null },
+      include: { lines: true, partner: true },
+    });
+    if (!movement) throw new NotFoundException('ບໍ່ພົບລາຍການເຄື່ອນໄຫວສາງ');
+
+    const day = await this.businessDay.current();
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Reverse SKU balances if NEW scope
+      if (
+        movement.scope === 'NEW' &&
+        (movement.status === 'COMPLETED' || movement.status === 'APPROVED')
+      ) {
+        if (movement.type === 'IN') {
+          for (const line of movement.lines) {
+            if (!line.goldSkuId) continue;
+            const bal = await tx.stockNewSkuBalance.findUnique({
+              where: {
+                businessDayId_goldSkuId: { businessDayId: day.id, goldSkuId: line.goldSkuId },
+              },
+            });
+            if (bal) {
+              const inQty = Math.max(0, bal.inQty - line.quantity);
+              const balanceQty = bal.openingQty + inQty - bal.outQty;
+              const sku = await tx.goldSku.findUnique({ where: { id: line.goldSkuId } });
+              const totalWeightG = dec(sku?.weightG ?? 0).mul(balanceQty);
+              await tx.stockNewSkuBalance.update({
+                where: { id: bal.id },
+                data: { inQty, balanceQty, totalWeightG: D(totalWeightG) },
+              });
+            }
+          }
+        } else if (movement.type === 'OUT' || movement.type === 'TRANSFER') {
+          for (const line of movement.lines) {
+            if (!line.goldSkuId) continue;
+            const bal = await tx.stockNewSkuBalance.findUnique({
+              where: {
+                businessDayId_goldSkuId: { businessDayId: day.id, goldSkuId: line.goldSkuId },
+              },
+            });
+            if (bal) {
+              const outQty = Math.max(0, bal.outQty - line.quantity);
+              const balanceQty = bal.openingQty + bal.inQty - outQty;
+              const sku = await tx.goldSku.findUnique({ where: { id: line.goldSkuId } });
+              const totalWeightG = dec(sku?.weightG ?? 0).mul(balanceQty);
+              await tx.stockNewSkuBalance.update({
+                where: { id: bal.id },
+                data: { outQty, balanceQty, totalWeightG: D(totalWeightG) },
+              });
+            }
+          }
+        }
+      }
+
+      // 2. Soft-delete movement
+      const updated = await tx.stockMovement.update({
+        where: { id },
+        data: { deletedAt: now, deletedById: user.id },
+      });
+
+      // 3. Soft-delete StockNewLedger row
+      await tx.stockNewLedger.updateMany({
+        where: { movementId: id, deletedAt: null },
+        data: { deletedAt: now },
+      });
+      await this.recomputeNewLedgerRunningTotals(tx);
+
+      // 4. Reverse StockOldTypeBalance and soft-delete StockOldLedger rows
+      const oldLedgerRows = await tx.stockOldLedger.findMany({
+        where: { movementId: id, deletedAt: null },
+      });
+      for (const r of oldLedgerRows) {
+        await this.adjustOldTypeBalance(tx, day.id, r.goldTypeId, {
+          inDelta: toDec(r.goldInG).neg(),
+          outDelta: toDec(r.goldOutG).neg(),
+          priceInDelta: toDec(r.priceIn).neg(),
+          priceOutDelta: toDec(r.priceOut).neg(),
+        });
+      }
+      await tx.stockOldLedger.updateMany({
+        where: { movementId: id, deletedAt: null },
+        data: { deletedAt: now },
+      });
+      if (oldLedgerRows.length > 0) {
+        await this.recomputeOldLedgerRunningTotals(tx);
+      }
+
+      // 5. Soft-delete GoldApArLedger row
+      await tx.goldApArLedger.updateMany({
+        where: { movementId: id, deletedAt: null },
+        data: { deletedAt: now },
+      });
+      if (movement.partnerId) {
+        await this.recomputeGoldApArRunningTotals(tx, movement.partnerId, 'AP');
+      }
+
+      // 6. Soft-delete CashApArLedger row
+      await tx.cashApArLedger.updateMany({
+        where: { refId: id, deletedAt: null },
+        data: { deletedAt: now },
+      });
+
+      await this.audit.record(
+        {
+          actorId: user.id,
+          action: 'DELETE',
+          entity: 'StockMovement',
+          entityId: id,
+          before: { code: movement.code, totalGoldG: movement.totalGoldG.toFixed() },
+          after: { deletedAt: now.toISOString() },
+          summary: `ລຶບການເຄື່ອນໄຫວສາງ ${movement.code} — ${movement.totalGoldG.toFixed()} g`,
+        },
+        tx,
+      );
+
+      return updated;
+    });
+  }
+
+  async updateSkuBalance(id: string, dto: UpdateSkuBalanceDto, user: AuthenticatedUser) {
+    const balance = await this.prisma.stockNewSkuBalance.findUnique({
+      where: { id },
+      include: { goldSku: true },
+    });
+    if (!balance) throw new NotFoundException('ບໍ່ພົບຍອດ SKU');
+
+    const newOpeningQty = dto.openingQty;
+    const newBalanceQty = newOpeningQty + balance.inQty - balance.outQty;
+    const totalWeightG = dec(balance.goldSku.weightG).mul(newBalanceQty);
+
+    const updated = await this.prisma.stockNewSkuBalance.update({
+      where: { id },
+      data: {
+        openingQty: newOpeningQty,
+        balanceQty: newBalanceQty,
+        totalWeightG: D(totalWeightG),
+      },
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      action: 'UPDATE',
+      entity: 'StockNewSkuBalance',
+      entityId: id,
+      before: { openingQty: balance.openingQty, balanceQty: balance.balanceQty },
+      after: { openingQty: newOpeningQty, balanceQty: newBalanceQty },
+      summary: `ແກ້ໄຂຈຳນວນຕັ້ງຕົ້ນ ${balance.goldSku.fullSkuName}: ${balance.openingQty} -> ${newOpeningQty}`,
+    });
+
+    return updated;
+  }
+
+  async updateOldTypeBalance(id: string, dto: UpdateOldTypeBalanceDto, user: AuthenticatedUser) {
+    const balance = await this.prisma.stockOldTypeBalance.findUnique({
+      where: { id },
+      include: { goldType: true },
+    });
+    if (!balance) throw new NotFoundException('ບໍ່ພົບຍອດປະເພດຄຳ');
+
+    const newOpeningWeightG = dec(dto.openingWeightG);
+    const newOpeningCost = dec(dto.openingCost);
+    if (newOpeningWeightG.lt(0) || newOpeningCost.lt(0)) {
+      throw new BadRequestException('ຍອດຕັ້ງຕົ້ນຕ້ອງບໍ່ຕິດລົບ');
+    }
+
+    const inG = toDec(balance.inG);
+    const outG = toDec(balance.outG);
+    const priceIn = toDec(balance.priceIn);
+    const priceOut = toDec(balance.priceOut);
+
+    const newClosingWeightG = newOpeningWeightG.plus(inG).minus(outG);
+    const newClosingCost = newOpeningCost.plus(priceIn).minus(priceOut);
+
+    const updated = await this.prisma.stockOldTypeBalance.update({
+      where: { id },
+      data: {
+        openingWeightG: D(newOpeningWeightG),
+        openingCost: D(newOpeningCost),
+        closingWeightG: D(newClosingWeightG),
+        closingCost: D(newClosingCost),
+      },
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      action: 'UPDATE',
+      entity: 'StockOldTypeBalance',
+      entityId: id,
+      before: {
+        openingWeightG: balance.openingWeightG.toFixed(),
+        openingCost: balance.openingCost.toFixed(),
+        closingWeightG: balance.closingWeightG.toFixed(),
+        closingCost: balance.closingCost.toFixed(),
+      },
+      after: {
+        openingWeightG: newOpeningWeightG.toFixed(),
+        openingCost: newOpeningCost.toFixed(),
+        closingWeightG: newClosingWeightG.toFixed(),
+        closingCost: newClosingCost.toFixed(),
+      },
+      summary: `ແກ້ໄຂຍອດຕັ້ງຕົ້ນ ${balance.goldType.nameLo}: ${balance.openingWeightG.toFixed()} g -> ${newOpeningWeightG.toFixed()} g`,
+    });
+
+    return updated;
+  }
+
+  async updateOldHistoryRow(id: string, dto: UpdateOldLedgerRowDto, user: AuthenticatedUser) {
+    const row = await this.prisma.stockOldLedger.findFirst({
+      where: { id, deletedAt: null },
+      include: { goldType: true },
+    });
+    if (!row) throw new NotFoundException('ບໍ່ພົບລາຍການປະຫວັດສາງຄຳເກົ່າ');
+
+    const day = await this.businessDay.current();
+    const isIn = toDec(row.goldInG).gt(0) || toDec(row.goldOutG).eq(0);
+    const newWeight = dto.weightG !== undefined ? dec(dto.weightG) : isIn ? toDec(row.goldInG) : toDec(row.goldOutG);
+    if (newWeight.lte(0)) throw new BadRequestException('ນ້ຳໜັກຕ້ອງໃຫຍ່ກວ່າ 0');
+
+    const newCost = dto.totalCost !== undefined ? dec(dto.totalCost) : isIn ? toDec(row.priceIn) : toDec(row.priceOut);
+    const nextGoldTypeId = dto.goldTypeId ?? row.goldTypeId;
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.adjustOldTypeBalance(tx, day.id, row.goldTypeId, {
+        inDelta: toDec(row.goldInG).neg(),
+        outDelta: toDec(row.goldOutG).neg(),
+        priceInDelta: toDec(row.priceIn).neg(),
+        priceOutDelta: toDec(row.priceOut).neg(),
+      });
+
+      const updated = await tx.stockOldLedger.update({
+        where: { id },
+        data: {
+          goldTypeId: nextGoldTypeId,
+          partnerLabel: dto.partnerLabel !== undefined ? dto.partnerLabel : row.partnerLabel,
+          goldInG: isIn ? D(newWeight) : D(dec(0)),
+          goldOutG: !isIn ? D(newWeight) : D(dec(0)),
+          priceIn: isIn ? D(newCost) : D(dec(0)),
+          priceOut: !isIn ? D(newCost) : D(dec(0)),
+        },
+      });
+
+      await this.adjustOldTypeBalance(tx, day.id, nextGoldTypeId, {
+        inDelta: isIn ? newWeight : dec(0),
+        outDelta: !isIn ? newWeight : dec(0),
+        priceInDelta: isIn ? newCost : dec(0),
+        priceOutDelta: !isIn ? newCost : dec(0),
+      });
+
+      await this.recomputeOldLedgerRunningTotals(tx);
+
+      await this.audit.record(
+        {
+          actorId: user.id,
+          action: 'UPDATE',
+          entity: 'StockOldLedger',
+          entityId: id,
+          before: {
+            goldTypeId: row.goldTypeId,
+            goldInG: row.goldInG.toFixed(),
+            goldOutG: row.goldOutG.toFixed(),
+            priceIn: row.priceIn.toFixed(),
+            priceOut: row.priceOut.toFixed(),
+          },
+          after: {
+            goldTypeId: nextGoldTypeId,
+            weightG: newWeight.toFixed(),
+            cost: newCost.toFixed(),
+          },
+          summary: `ແກ້ໄຂປະຫວັດສາງຄຳເກົ່າ ${row.typeLabel} — ${newWeight.toFixed()} g`,
+        },
+        tx,
+      );
+
+      return updated;
+    });
+  }
+
+  async deleteOldHistoryRow(id: string, user: AuthenticatedUser) {
+    const row = await this.prisma.stockOldLedger.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!row) throw new NotFoundException('ບໍ່ພົບລາຍການປະຫວັດສາງຄຳເກົ່າ');
+
+    if (row.movementId) {
+      return this.deleteMovement(row.movementId, user);
+    }
+
+    const day = await this.businessDay.current();
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.adjustOldTypeBalance(tx, day.id, row.goldTypeId, {
+        inDelta: toDec(row.goldInG).neg(),
+        outDelta: toDec(row.goldOutG).neg(),
+        priceInDelta: toDec(row.priceIn).neg(),
+        priceOutDelta: toDec(row.priceOut).neg(),
+      });
+
+      const updated = await tx.stockOldLedger.update({
+        where: { id },
+        data: { deletedAt: now },
+      });
+
+      await this.recomputeOldLedgerRunningTotals(tx);
+
+      await this.audit.record(
+        {
+          actorId: user.id,
+          action: 'DELETE',
+          entity: 'StockOldLedger',
+          entityId: id,
+          before: { typeLabel: row.typeLabel, goldInG: row.goldInG.toFixed(), goldOutG: row.goldOutG.toFixed() },
+          after: { deletedAt: now.toISOString() },
+          summary: `ລຶບປະຫວັດສາງຄຳເກົ່າ ${row.typeLabel}`,
+        },
+        tx,
+      );
+
+      return updated;
+    });
+  }
+
+  private async adjustOldTypeBalance(
+    tx: Prisma.TransactionClient,
+    businessDayId: string,
+    goldTypeId: string,
+    deltas: {
+      inDelta: Decimal;
+      outDelta: Decimal;
+      priceInDelta: Decimal;
+      priceOutDelta: Decimal;
+    },
+  ) {
+    const key = {
+      businessDayId_goldTypeId: { businessDayId, goldTypeId },
+    };
+    const existing = await tx.stockOldTypeBalance.findUnique({ where: key });
+
+    let openingWeightG = toDec(existing?.openingWeightG);
+    let openingCost = toDec(existing?.openingCost);
+
+    if (!existing) {
+      const latestPrev = await tx.stockOldTypeBalance.findFirst({
+        where: { goldTypeId, businessDayId: { not: businessDayId } },
+        orderBy: [{ businessDay: { date: 'desc' } }, { updatedAt: 'desc' }],
+      });
+      if (latestPrev) {
+        openingWeightG = toDec(latestPrev.closingWeightG);
+        openingCost = toDec(latestPrev.closingCost);
+      }
+    }
+
+    const inG = toDec(existing?.inG).plus(deltas.inDelta);
+    const outG = toDec(existing?.outG).plus(deltas.outDelta);
+    const priceIn = toDec(existing?.priceIn).plus(deltas.priceInDelta);
+    const priceOut = toDec(existing?.priceOut).plus(deltas.priceOutDelta);
+
+    const clampedInG = inG.lt(0) ? dec(0) : inG;
+    const clampedOutG = outG.lt(0) ? dec(0) : outG;
+    const clampedPriceIn = priceIn.lt(0) ? dec(0) : priceIn;
+    const clampedPriceOut = priceOut.lt(0) ? dec(0) : priceOut;
+
+    const data = {
+      inG: D(clampedInG),
+      outG: D(clampedOutG),
+      priceIn: D(clampedPriceIn),
+      priceOut: D(clampedPriceOut),
+      closingWeightG: D(openingWeightG.plus(clampedInG).minus(clampedOutG)),
+      closingCost: D(openingCost.plus(clampedPriceIn).minus(clampedPriceOut)),
+    };
+
+    await tx.stockOldTypeBalance.upsert({
+      where: key,
+      update: data,
+      create: {
+        businessDayId,
+        goldTypeId,
+        openingWeightG: D(openingWeightG),
+        openingCost: D(openingCost),
+        ...data,
+      },
+    });
+  }
+
+  async recomputeNewLedgerRunningTotals(tx: Prisma.TransactionClient) {
+    const rows = await tx.stockNewLedger.findMany({
+      where: { deletedAt: null },
+      orderBy: [{ businessDate: 'asc' }, { sequence: 'asc' }],
+    });
+    let runningWeight = dec(0);
+    let runningCost = dec(0);
+    for (const row of rows) {
+      runningWeight = runningWeight.plus(toDec(row.goldInG)).minus(toDec(row.goldOutG));
+      runningCost = runningCost.plus(toDec(row.priceIn)).minus(toDec(row.priceOut));
+      await tx.stockNewLedger.update({
+        where: { id: row.id },
+        data: {
+          weightG: D(runningWeight),
+          cost: D(runningCost),
+        },
+      });
+    }
+  }
+
+  async recomputeOldLedgerRunningTotals(tx: Prisma.TransactionClient) {
+    const rows = await tx.stockOldLedger.findMany({
+      where: { deletedAt: null },
+      orderBy: [{ businessDate: 'asc' }, { sequence: 'asc' }],
+    });
+    let runningWeight = dec(0);
+    let runningCost = dec(0);
+    for (const row of rows) {
+      runningWeight = runningWeight.plus(toDec(row.goldInG)).minus(toDec(row.goldOutG));
+      runningCost = runningCost.plus(toDec(row.priceIn)).minus(toDec(row.priceOut));
+      await tx.stockOldLedger.update({
+        where: { id: row.id },
+        data: {
+          weightG: D(runningWeight),
+          cost: D(runningCost),
+        },
+      });
+    }
+  }
+
+  async recomputeGoldApArRunningTotals(
+    tx: Prisma.TransactionClient,
+    partnerId: string,
+    side: 'AP' | 'AR',
+  ) {
+    const rows = await tx.goldApArLedger.findMany({
+      where: { partnerId, side, deletedAt: null },
+      orderBy: [{ businessDate: 'asc' }, { sequence: 'asc' }],
+    });
+    let runningWeight = dec(0);
+    let runningCost = dec(0);
+    for (const row of rows) {
+      runningWeight = runningWeight.plus(toDec(row.goldInG)).minus(toDec(row.goldOutG));
+      runningCost = runningCost.plus(toDec(row.priceIn)).minus(toDec(row.priceOut));
+      await tx.goldApArLedger.update({
+        where: { id: row.id },
+        data: {
+          weightG: D(runningWeight),
+          cost: D(runningCost),
+        },
+      });
+    }
+  }
+
 }

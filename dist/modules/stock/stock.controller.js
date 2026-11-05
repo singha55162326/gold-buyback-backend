@@ -60,6 +60,27 @@ let StockController = class StockController {
     transfer(dto, user) {
         return this.stock.transfer(dto, user);
     }
+    getMovement(id) {
+        return this.stock.getMovement(id);
+    }
+    updateMovement(id, dto, user) {
+        return this.stock.updateMovement(id, dto, user);
+    }
+    deleteMovement(id, user) {
+        return this.stock.deleteMovement(id, user);
+    }
+    updateSkuBalance(id, dto, user) {
+        return this.stock.updateSkuBalance(id, dto, user);
+    }
+    updateOldTypeBalance(id, dto, user) {
+        return this.stock.updateOldTypeBalance(id, dto, user);
+    }
+    updateOldHistoryRow(id, dto, user) {
+        return this.stock.updateOldHistoryRow(id, dto, user);
+    }
+    deleteOldHistoryRow(id, user) {
+        return this.stock.deleteOldHistoryRow(id, user);
+    }
     /* ---- §7.3 FACTORY tracking ---- */
     /*
      * ສອງທາງ: `status=AWAITING_ASSESSMENT` ບໍ່ມີວັນທີ = ຄິວທີ່ຍັງຄ້າງທັງໝົດ;
@@ -196,6 +217,78 @@ __decorate([
     __metadata("design:paramtypes", [stock_dto_1.CreateTransferDto, Object]),
     __metadata("design:returntype", void 0)
 ], StockController.prototype, "transfer", null);
+__decorate([
+    (0, common_1.Get)('movements/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], StockController.prototype, "getMovement", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Patch)('movements/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, stock_dto_1.UpdateStockMovementDto, Object]),
+    __metadata("design:returntype", void 0)
+], StockController.prototype, "updateMovement", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Delete)('movements/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], StockController.prototype, "deleteMovement", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Patch)('new/balances/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, stock_dto_1.UpdateSkuBalanceDto, Object]),
+    __metadata("design:returntype", void 0)
+], StockController.prototype, "updateSkuBalance", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Patch)('old/balances/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, stock_dto_1.UpdateOldTypeBalanceDto, Object]),
+    __metadata("design:returntype", void 0)
+], StockController.prototype, "updateOldTypeBalance", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Patch)('old/history/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, stock_dto_1.UpdateOldLedgerRowDto, Object]),
+    __metadata("design:returntype", void 0)
+], StockController.prototype, "updateOldHistoryRow", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Delete)('old/history/:id'),
+    openapi.ApiResponse({ status: 200, type: Object }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], StockController.prototype, "deleteOldHistoryRow", null);
 __decorate([
     (0, common_1.Get)('factory'),
     openapi.ApiResponse({ status: 200 }),

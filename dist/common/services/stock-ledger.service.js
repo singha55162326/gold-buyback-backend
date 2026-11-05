@@ -170,8 +170,18 @@ let StockLedgerService = class StockLedgerService {
             },
         };
         const existing = await tx.stockOldTypeBalance.findUnique({ where: key });
-        const openingWeightG = toDec(existing?.openingWeightG);
-        const openingCost = toDec(existing?.openingCost);
+        let openingWeightG = toDec(existing?.openingWeightG);
+        let openingCost = toDec(existing?.openingCost);
+        if (!existing) {
+            const latestPrev = await tx.stockOldTypeBalance.findFirst({
+                where: { goldTypeId: input.goldTypeId, businessDayId: { not: input.businessDayId } },
+                orderBy: [{ businessDay: { date: 'desc' } }, { updatedAt: 'desc' }],
+            });
+            if (latestPrev) {
+                openingWeightG = toDec(latestPrev.closingWeightG);
+                openingCost = toDec(latestPrev.closingCost);
+            }
+        }
         const inG = toDec(existing?.inG).plus(input.goldInG);
         const outG = toDec(existing?.outG).plus(input.goldOutG);
         const priceIn = toDec(existing?.priceIn).plus(input.priceIn);

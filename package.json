@@ -19,7 +19,11 @@
     "rebuild-sku-names": "tsx prisma/rebuild-sku-names.ts"
   },
   "dependencies": {
-    "@kpv/domain": "*",
+<<<<<<< HEAD
+    "@kpv/domain": "file:./shared/",
+=======
+    "@kpv/domain": "file:./shared",
+>>>>>>> origin/update_by_Ton
     "@nestjs/common": "^11.0.7",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.7",

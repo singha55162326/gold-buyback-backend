@@ -103,13 +103,21 @@ export class ApArPostingService {
       .plus(posting.amountIn)
       .minus(posting.amountOut);
 
+    let categoryId = input.categoryId ?? null;
+    if (!categoryId && (input.reason === 'LABOR_PAYABLE' || input.reason === 'LABOR_PAYMENT')) {
+      const laborCategory = await tx.apArCashCategory.findFirst({
+        where: { code: 'LABOR_FEE', deletedAt: null },
+      });
+      categoryId = laborCategory?.id ?? null;
+    }
+
     return tx.cashApArLedger.create({
       data: {
         side: posting.side,
         refType: REF_TYPE[input.reason],
         refId: input.refId ?? null,
         partnerId: input.partnerId ?? null,
-        categoryId: input.categoryId ?? null,
+        categoryId,
         businessDate,
         currency: input.currency,
         amountIn: D(posting.amountIn),
@@ -156,8 +164,17 @@ export class ApArPostingService {
     if (!partner || !partner.tracksGoldApAr) return null;
 
     const rules = await this.loadGoldRules(tx);
-    const rule = findPostingRule(rules, input.scope, input.type, partner.code);
-    if (!rule) return null;
+    let rule = findPostingRule(rules, input.scope, input.type, partner.code);
+    if (!rule) {
+      rule = {
+        scope: input.scope,
+        type: input.type,
+        partnerCode: partner.code,
+        side: 'AP',
+        sign: input.type === 'IN' ? 1 : -1,
+        counterpartyCode: null,
+      };
+    }
 
     const posting = buildGoldPosting(rule, input.weightG, input.cost);
     const businessDate = BusinessDayService.toDateOnly();

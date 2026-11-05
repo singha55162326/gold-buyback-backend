@@ -57,7 +57,9 @@ export function findPostingRule(
   partnerCode: string,
 ): GoldPostingRule | null {
   return (
-    rules.find((r) => r.scope === scope && r.type === type && r.partnerCode === partnerCode) ?? null
+    rules.find((r) => r.scope === scope && r.type === type && r.partnerCode === partnerCode) ??
+    rules.find((r) => r.type === type && r.partnerCode === partnerCode) ??
+    null
   );
 }
 

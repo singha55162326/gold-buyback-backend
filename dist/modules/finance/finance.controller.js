@@ -53,11 +53,23 @@ let FinanceController = class FinanceController {
     deleteIncomeExpenseCategory(id, user) {
         return this.finance.deleteIncomeExpenseCategory(id, user);
     }
+    incomeExpenseSummary(query, user) {
+        return this.finance.incomeExpenseDailySummary(query, user);
+    }
+    incomeExpenseDailySummary(query, user) {
+        return this.finance.incomeExpenseDailySummary(query, user);
+    }
     incomeExpenseHistory(query, user) {
         return this.finance.incomeExpenseHistory(query.kind, query, user);
     }
     createIncomeExpense(dto, user) {
         return this.finance.createIncomeExpense(dto, user);
+    }
+    updateIncomeExpense(id, dto, user) {
+        return this.finance.updateIncomeExpense(id, dto, user);
+    }
+    deleteIncomeExpense(id, user) {
+        return this.finance.deleteIncomeExpense(id, user);
     }
     /* ---- §3.7 ຝາກສິນຄ້າ ---- */
     consignments(query, user) {
@@ -183,6 +195,24 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "deleteIncomeExpenseCategory", null);
 __decorate([
+    (0, common_1.Get)('income-expense/summary'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [finance_dto_1.IncomeExpenseSummaryDto, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "incomeExpenseSummary", null);
+__decorate([
+    (0, common_1.Get)('income-expense/daily-summary'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)()),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [finance_dto_1.IncomeExpenseSummaryDto, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "incomeExpenseDailySummary", null);
+__decorate([
     (0, common_1.Get)('income-expense'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)()),
@@ -201,6 +231,27 @@ __decorate([
     __metadata("design:paramtypes", [finance_dto_1.CreateIncomeExpenseDto, Object]),
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "createIncomeExpense", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Patch)('income-expense/:id'),
+    openapi.ApiResponse({ status: 200, type: Object }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, finance_dto_1.UpdateIncomeExpenseDto, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "updateIncomeExpense", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Delete)('income-expense/:id'),
+    openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], FinanceController.prototype, "deleteIncomeExpense", null);
 __decorate([
     (0, common_1.Get)('consignments'),
     openapi.ApiResponse({ status: 200 }),

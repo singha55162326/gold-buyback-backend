@@ -10,11 +10,13 @@ import {
   CreateConsignmentDto,
   CreateIncomeExpenseCategoryDto,
   CreateIncomeExpenseDto,
+  IncomeExpenseSummaryDto,
   IncomeExpenseHistoryDto,
   SettleApArCashDto,
   UpdateApArCashCategoryDto,
   UpdateBankAccountDto,
   UpdateIncomeExpenseCategoryDto,
+  UpdateIncomeExpenseDto,
 } from './dto/finance.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -87,6 +89,22 @@ export class FinanceController {
     return this.finance.deleteIncomeExpenseCategory(id, user);
   }
 
+  @Get('income-expense/summary')
+  incomeExpenseSummary(
+    @Query() query: IncomeExpenseSummaryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.finance.incomeExpenseDailySummary(query, user);
+  }
+
+  @Get('income-expense/daily-summary')
+  incomeExpenseDailySummary(
+    @Query() query: IncomeExpenseSummaryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.finance.incomeExpenseDailySummary(query, user);
+  }
+
   @Get('income-expense')
   incomeExpenseHistory(
     @Query() query: IncomeExpenseHistoryDto,
@@ -106,6 +124,22 @@ export class FinanceController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.finance.createIncomeExpense(dto, user);
+  }
+
+  @Roles('ADMIN')
+  @Patch('income-expense/:id')
+  updateIncomeExpense(
+    @Param('id') id: string,
+    @Body() dto: UpdateIncomeExpenseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.finance.updateIncomeExpense(id, dto, user);
+  }
+
+  @Roles('ADMIN')
+  @Delete('income-expense/:id')
+  deleteIncomeExpense(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.finance.deleteIncomeExpense(id, user);
   }
 
   /* ---- §3.7 ຝາກສິນຄ້າ ---- */
