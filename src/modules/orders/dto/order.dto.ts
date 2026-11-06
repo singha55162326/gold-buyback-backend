@@ -97,6 +97,9 @@ export class CreateOrderDto {
   @IsOptional() @IsDecimalString({ labelLo: 'ນ້ຳໜັກ' }) weightG?: string;
   @IsOptional() @IsInt() @Min(1) quantity?: number;
   @IsDecimalString({ labelLo: 'ຍອດລວມ' }) totalAmount: string;
+  @IsOptional() @IsIn(['LAK', 'THB', 'USD']) currency?: 'LAK' | 'THB' | 'USD';
+  @IsOptional() @IsDecimalString({ labelLo: 'ຍອດລວມຕາມສະກຸນເງິນ' }) originalTotalAmount?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ອັດຕາແລກປ່ຽນ' }) exchangeRate?: string;
   @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 
   @ValidateNested()
@@ -163,6 +166,9 @@ export class UpdateOrderDto {
   @IsOptional() @IsString() supplierId?: string | null;
   @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string | null;
   @IsOptional() @IsDecimalString({ labelLo: 'ຍອດລວມ' }) totalAmount?: string;
+  @IsOptional() @IsIn(['LAK', 'THB', 'USD']) currency?: 'LAK' | 'THB' | 'USD';
+  @IsOptional() @IsDecimalString({ labelLo: 'ຍອດລວມຕາມສະກຸນເງິນ' }) originalTotalAmount?: string;
+  @IsOptional() @IsDecimalString({ labelLo: 'ອັດຕາແລກປ່ຽນ' }) exchangeRate?: string;
   @IsOptional()
   @IsIn([
     'ORDER_PLACED',

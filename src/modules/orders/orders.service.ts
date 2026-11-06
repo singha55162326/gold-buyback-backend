@@ -148,6 +148,24 @@ export class OrdersService {
     const receipt = this.resolveReceipts(this.receiptLines(dto), context.rates, totalAmount);
     const day = await this.businessDay.current();
 
+    let currency = dto.currency ?? 'LAK';
+    let originalTotalAmount = dto.originalTotalAmount ? dec(dto.originalTotalAmount) : null;
+    let exchangeRate = dto.exchangeRate ? dec(dto.exchangeRate) : null;
+
+    if (!dto.currency && dto.note) {
+      const match = dto.note.match(/\[TOTAL:\s*([\d,.]+)\s*(THB|USD|LAK)\]/);
+      if (match) {
+        currency = match[2] as 'LAK' | 'THB' | 'USD';
+        originalTotalAmount = dec(match[1].replace(/,/g, ''));
+      }
+    }
+    if (!originalTotalAmount) {
+      originalTotalAmount = totalAmount;
+    }
+    if (!exchangeRate) {
+      exchangeRate = currency !== 'LAK' ? PricingContextService.rateFor(context.rates, currency, 'sell') : dec(1);
+    }
+
     const customer = await this.prisma.customer.upsert({
       where: { phone: dto.phone },
       update: {},
@@ -178,6 +196,9 @@ export class OrdersService {
           totalAmount: D(totalAmount),
           receivedAmount: D(receipt.applied),
           balanceAmount: D(totalAmount.minus(receipt.applied)),
+          currency,
+          originalTotalAmount: D(originalTotalAmount),
+          exchangeRate: D(exchangeRate),
           status: 'ORDER_PLACED',
           note: dto.note ?? null,
           createdById: user.id,

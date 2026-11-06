@@ -146,10 +146,51 @@ let AdvanceService = class AdvanceService {
             const received = toDec(row.amountIn);
             const outstanding = toDec(row.order.balanceAmount);
             const settled = toDec(row.amountOut);
+            // คำนวณ Order Currency และ Balance บน Server เพื่อความแม่นยำทางบัญชี
+            let cur = row.order.currency || 'LAK';
+            let totalInCur = row.order.originalTotalAmount ? toDec(row.order.originalTotalAmount) : null;
+            const noteText = row.order.note ?? row.note ?? '';
+            const match = noteText.match(/\[TOTAL:\s*([\d,.]+)\s*(THB|USD|LAK)\]/);
+            if (cur === 'LAK' && match) {
+                cur = match[2];
+                totalInCur = (0, domain_1.dec)(match[1].replace(/,/g, ''));
+            }
+            else if (cur === 'LAK' && row.currency && row.currency !== 'LAK') {
+                cur = row.currency;
+            }
+            if (!totalInCur) {
+                totalInCur = toDec(row.order.totalAmount);
+            }
+            let balanceInCur = (0, domain_1.dec)(0);
+            if (outstanding.gt(0)) {
+                if (cur === 'LAK') {
+                    balanceInCur = outstanding;
+                }
+                else {
+                    const rcvdInCur = (row.order.receipts ?? [])
+                        .filter((r) => !r.isRefund && r.currency === cur)
+                        .reduce((s, r) => s.plus(toDec(r.amount)), (0, domain_1.dec)(0));
+                    const effectiveRcvd = rcvdInCur.gt(0)
+                        ? rcvdInCur
+                        : (row.currency === cur ? toDec(row.amountIn) : (0, domain_1.dec)(0));
+                    const diff = totalInCur.minus(effectiveRcvd);
+                    balanceInCur = diff.gt(0) ? diff : (0, domain_1.dec)(0);
+                }
+            }
+            const cleanNote = noteText
+                .replace(/\[TOTAL:\s*[\d,.]+\s*(THB|USD|LAK)\]\s*/g, '')
+                .trim();
             return {
                 ...row,
                 outstandingAmount: outstanding.toFixed(),
                 netAmount: received.minus(outstanding).minus(settled).toFixed(),
+                orderSummary: {
+                    currency: cur,
+                    totalAmount: totalInCur.toFixed(),
+                    balanceAmount: balanceInCur.toFixed(),
+                    isBalanceZero: outstanding.lte(0),
+                    cleanNote,
+                },
             };
         }), total, range);
     }

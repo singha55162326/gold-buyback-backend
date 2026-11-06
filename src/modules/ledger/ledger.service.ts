@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Currency } from '@prisma/client';
+import type { Currency, ApArSide, Prisma } from '@prisma/client';
 import {
   cashOnHand,
   calculateWealth,
@@ -13,6 +13,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { HistoryRangeService } from '../../common/services/history-range.service';
 import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
+import type { GoldApArHistoryDto } from './dto/gold-apar.dto';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { StockLedgerService } from '../../common/services/stock-ledger.service';
@@ -142,25 +143,41 @@ export class LedgerService {
    * ---------------------------------------------------------------- */
 
   /** ຍອດລວມ AP (GOLD) ແລະ AR (GOLD), with the baht equivalent (§8.1). */
-  async goldApArSummary(asOfDate?: Date) {
-    const today = asOfDate
-      ? BusinessDayService.toDateOnly(asOfDate)
+  async goldApArSummary(asOfDate?: string | Date, filterSide?: ApArSide) {
+    const parsedDate =
+      typeof asOfDate === 'string' && asOfDate.trim() !== ''
+        ? new Date(`${asOfDate.trim()}T00:00:00.000Z`)
+        : asOfDate instanceof Date
+          ? asOfDate
+          : undefined;
+    const today = parsedDate
+      ? BusinessDayService.toDateOnly(parsedDate)
       : BusinessDayService.toDateOnly();
+
+    const sides = filterSide ? [filterSide] : (['AP', 'AR'] as const);
 
     const [prevMovements, todayMovements] = await Promise.all([
       this.prisma.goldApArLedger.groupBy({
         by: ['side'],
-        where: { businessDate: { lt: today }, deletedAt: null },
+        where: {
+          businessDate: { lt: today },
+          deletedAt: null,
+          ...(filterSide ? { side: filterSide } : {}),
+        },
         _sum: { goldInG: true, goldOutG: true },
       }),
       this.prisma.goldApArLedger.groupBy({
         by: ['side'],
-        where: { businessDate: today, deletedAt: null },
+        where: {
+          businessDate: today,
+          deletedAt: null,
+          ...(filterSide ? { side: filterSide } : {}),
+        },
         _sum: { goldInG: true, goldOutG: true },
       }),
     ]);
 
-    return (['AP', 'AR'] as const).map((side) => {
+    return sides.map((side) => {
       const prevRow = prevMovements.find((m) => m.side === side);
       const start = dec(prevRow?._sum.goldInG?.toFixed() ?? 0).minus(
         dec(prevRow?._sum.goldOutG?.toFixed() ?? 0),
@@ -191,44 +208,65 @@ export class LedgerService {
    * under the §8.4 pair — carries no balance of its own, so showing it would
    * be a permanent row of zeros next to the real counterparties.
    */
-  async goldApArByPartner(asOfDate?: Date) {
-    const today = asOfDate
-      ? BusinessDayService.toDateOnly(asOfDate)
+  async goldApArByPartner(asOfDate?: string | Date, filterSide?: ApArSide) {
+    const parsedDate =
+      typeof asOfDate === 'string' && asOfDate.trim() !== ''
+        ? new Date(`${asOfDate.trim()}T00:00:00.000Z`)
+        : asOfDate instanceof Date
+          ? asOfDate
+          : undefined;
+    const today = parsedDate
+      ? BusinessDayService.toDateOnly(parsedDate)
       : BusinessDayService.toDateOnly();
 
-    // A partner earns a row by being the target some rule actually books onto
-    // — its own `partnerId`, or the `counterpartyId` that overrides it. Asking
-    // it this way (rather than "has no redirected rule") keeps a partner that
-    // both holds its own balance and redirects one movement.
+    const sides = filterSide ? [filterSide] : (['AP', 'AR'] as const);
+
+    // Identify partners that are purely passthrough redirectors (e.g. WITHDRAW -> EASY)
+    // and hold no balance of their own.
     const rules = await this.prisma.goldApArPostingRule.findMany({
       where: { isActive: true },
       select: { partnerId: true, counterpartyId: true },
     });
-    const holdsBalance = new Set(rules.map((r) => r.counterpartyId ?? r.partnerId));
+    const redirectedPartnerIds = new Set(
+      rules.filter((r) => r.counterpartyId !== null).map((r) => r.partnerId),
+    );
+    const counterpartyIds = new Set(
+      rules.filter((r) => r.counterpartyId !== null).map((r) => r.counterpartyId!),
+    );
+    // Pure passthroughs redirect their movements and are never the recipient of a redirect
+    const purePassthroughIds = [...redirectedPartnerIds].filter((id) => !counterpartyIds.has(id));
 
     const [partners, prevMovements, todayMovements] = await Promise.all([
       this.prisma.partnerSource.findMany({
         where: {
           tracksGoldApAr: true,
           deletedAt: null,
-          id: { in: [...holdsBalance] },
+          ...(purePassthroughIds.length > 0 ? { id: { notIn: purePassthroughIds } } : {}),
         },
         orderBy: { sortOrder: 'asc' },
       }),
       this.prisma.goldApArLedger.groupBy({
         by: ['partnerId', 'side'],
-        where: { businessDate: { lt: today }, deletedAt: null },
+        where: {
+          businessDate: { lt: today },
+          deletedAt: null,
+          ...(filterSide ? { side: filterSide } : {}),
+        },
         _sum: { goldInG: true, goldOutG: true },
       }),
       this.prisma.goldApArLedger.groupBy({
         by: ['partnerId', 'side'],
-        where: { businessDate: today, deletedAt: null },
+        where: {
+          businessDate: today,
+          deletedAt: null,
+          ...(filterSide ? { side: filterSide } : {}),
+        },
         _sum: { goldInG: true, goldOutG: true },
       }),
     ]);
 
     return partners.flatMap((partner) =>
-      (['AP', 'AR'] as const).map((side) => {
+      sides.map((side) => {
         const prevRow = prevMovements.find((m) => m.partnerId === partner.id && m.side === side);
         const todayRow = todayMovements.find((m) => m.partnerId === partner.id && m.side === side);
 
@@ -252,11 +290,14 @@ export class LedgerService {
     );
   }
 
-  async goldApArHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+  async goldApArHistory(query: GoldApArHistoryDto, user?: AuthenticatedUser) {
     const range = this.range.resolve(query, user);
-    const where = {
+    const partnerId = query.partnerId ?? query.partner_id;
+    const where: Prisma.GoldApArLedgerWhereInput = {
       deletedAt: null,
       businessDate: HistoryRangeService.dayWindow(range),
+      ...(query.side ? { side: query.side } : {}),
+      ...(partnerId ? { partnerId } : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.goldApArLedger.findMany({

@@ -19,6 +19,7 @@ const history_range_service_1 = require("../../common/services/history-range.ser
 const code_generator_service_1 = require("../../common/services/code-generator.service");
 const business_day_service_1 = require("../../common/services/business-day.service");
 const apar_posting_service_1 = require("../../common/services/apar-posting.service");
+const cash_service_1 = require("../cash/cash.service");
 const D = (value) => new client_1.Prisma.Decimal(value.toFixed());
 const toDec = (value) => (0, domain_1.dec)(value?.toFixed() ?? 0);
 const CURRENCIES = ['LAK', 'THB', 'USD'];
@@ -45,13 +46,15 @@ let FinanceService = class FinanceService {
     apar;
     range;
     codes;
-    constructor(prisma, audit, businessDay, apar, range, codes) {
+    cash;
+    constructor(prisma, audit, businessDay, apar, range, codes, cash) {
         this.prisma = prisma;
         this.audit = audit;
         this.businessDay = businessDay;
         this.apar = apar;
         this.range = range;
         this.codes = codes;
+        this.cash = cash;
     }
     /* ---------------------------------------------------------------- *
      * §3.7 — Module ລາຍການ Bank
@@ -153,6 +156,41 @@ let FinanceService = class FinanceService {
             throw new common_1.NotFoundException('ບໍ່ພົບລາຍການຮັບຈ່າຍ');
         const day = await this.businessDay.current();
         const isIncome = category.kind === 'INCOME';
+        if (category.kind === 'EXPENSE') {
+            const [cashBalances, bankBalances] = await Promise.all([
+                this.cash.cashBalances(),
+                this.cash.bankBalances(),
+            ]);
+            const cashRequested = new Map();
+            const bankRequested = new Map();
+            for (const leg of resolved) {
+                if (leg.method === 'CASH') {
+                    const prev = cashRequested.get(leg.currency) ?? (0, domain_1.dec)(0);
+                    cashRequested.set(leg.currency, prev.plus(leg.amount));
+                }
+                else if (leg.method === 'BANK' && leg.bankAccountId) {
+                    const key = `${leg.bankAccountId}:${leg.currency}`;
+                    const prev = bankRequested.get(key) ?? (0, domain_1.dec)(0);
+                    bankRequested.set(key, prev.plus(leg.amount));
+                }
+            }
+            for (const [currency, reqAmount] of cashRequested) {
+                const bal = cashBalances.find((b) => b.currency === currency);
+                const currentBal = (0, domain_1.dec)(bal?.balance ?? '0');
+                if (reqAmount.gt(currentBal)) {
+                    throw new common_1.BadRequestException(`ເງິນສົດ ${currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບລາຍຈ່າຍ (ມີ ${currentBal.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${reqAmount.toFixed()} ${currency})`);
+                }
+            }
+            for (const [key, reqAmount] of bankRequested) {
+                const [bankAccountId, currency] = key.split(':');
+                const bal = bankBalances.find((b) => b.bankAccountId === bankAccountId && b.currency === currency);
+                const currentBal = (0, domain_1.dec)(bal?.actual ?? '0');
+                const bankName = bal?.bankNameLo ?? 'ທະນາຄານ';
+                if (reqAmount.gt(currentBal)) {
+                    throw new common_1.BadRequestException(`ຍອດເງິນ ${currency} ໃນບັນຊີ ${bankName} (Module Bank) ບໍ່ພໍສຳລັບລາຍຈ່າຍ (ມີ ${currentBal.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${reqAmount.toFixed()} ${currency})`);
+                }
+            }
+        }
         return this.prisma.$transaction(async (tx) => {
             const rows = [];
             for (const leg of resolved) {
@@ -358,6 +396,36 @@ let FinanceService = class FinanceService {
         const note = dto.note !== undefined ? dto.note : before.note;
         const kind = category.kind;
         const isIncome = kind === 'INCOME';
+        if (category.kind === 'EXPENSE') {
+            const [cashBalances, bankBalances] = await Promise.all([
+                this.cash.cashBalances(),
+                this.cash.bankBalances(),
+            ]);
+            if (method === 'CASH') {
+                const bal = cashBalances.find((b) => b.currency === currency);
+                let available = (0, domain_1.dec)(bal?.balance ?? '0');
+                if (before.kind === 'EXPENSE' && before.method === 'CASH' && before.currency === currency) {
+                    available = available.plus((0, domain_1.dec)(before.amount));
+                }
+                if (amount.gt(available)) {
+                    throw new common_1.BadRequestException(`ເງິນສົດ ${currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບລາຍຈ່າຍ (ມີ ${available.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${amount.toFixed()} ${currency})`);
+                }
+            }
+            else if (method === 'BANK' && bankAccountId) {
+                const bal = bankBalances.find((b) => b.bankAccountId === bankAccountId && b.currency === currency);
+                let available = (0, domain_1.dec)(bal?.actual ?? '0');
+                const bankName = bal?.bankNameLo ?? 'ທະນາຄານ';
+                if (before.kind === 'EXPENSE' &&
+                    before.method === 'BANK' &&
+                    before.bankAccountId === bankAccountId &&
+                    before.currency === currency) {
+                    available = available.plus((0, domain_1.dec)(before.amount));
+                }
+                if (amount.gt(available)) {
+                    throw new common_1.BadRequestException(`ຍອດເງິນ ${currency} ໃນບັນຊີ ${bankName} (Module Bank) ບໍ່ພໍສຳລັບລາຍຈ່າຍ (ມີ ${available.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${amount.toFixed()} ${currency})`);
+                }
+            }
+        }
         return this.prisma.$transaction(async (tx) => {
             const after = await tx.incomeExpenseTransaction.update({
                 where: { id },
@@ -1053,6 +1121,7 @@ exports.FinanceService = FinanceService = __decorate([
         business_day_service_1.BusinessDayService,
         apar_posting_service_1.ApArPostingService,
         history_range_service_1.HistoryRangeService,
-        code_generator_service_1.CodeGeneratorService])
+        code_generator_service_1.CodeGeneratorService,
+        cash_service_1.CashService])
 ], FinanceService);
 //# sourceMappingURL=finance.service.js.map

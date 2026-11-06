@@ -20,6 +20,7 @@ const roles_decorator_1 = require("../../common/decorators/roles.decorator");
 const current_user_decorator_1 = require("../../common/decorators/current-user.decorator");
 const swagger_1 = require("@nestjs/swagger");
 const history_range_dto_1 = require("../../common/dto/history-range.dto");
+const gold_apar_dto_1 = require("./dto/gold-apar.dto");
 /**
  * Read-only accounting views (TOR §3.7, §8, §9). Every figure is derived from
  * the ledgers on request, so these endpoints have no write path at all.
@@ -47,11 +48,11 @@ let LedgerController = class LedgerController {
     cashApArHistory(query, user) {
         return this.ledger.cashApArHistory(query, user);
     }
-    goldApAr() {
-        return this.ledger.goldApArSummary();
+    goldApAr(asOf, side) {
+        return this.ledger.goldApArSummary(asOf, side);
     }
-    goldApArByPartner() {
-        return this.ledger.goldApArByPartner();
+    goldApArByPartner(asOf, side) {
+        return this.ledger.goldApArByPartner(asOf, side);
     }
     goldApArHistory(query, user) {
         return this.ledger.goldApArHistory(query, user);
@@ -114,19 +115,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], LedgerController.prototype, "cashApArHistory", null);
 __decorate([
+    openapi.ApiQuery({ name: "as_of", required: false }),
+    openapi.ApiQuery({ name: "side", required: false }),
     (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER', 'WAREHOUSE'),
     (0, common_1.Get)('ap-ar/gold'),
     openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)('as_of')),
+    __param(1, (0, common_1.Query)('side')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], LedgerController.prototype, "goldApAr", null);
 __decorate([
+    openapi.ApiQuery({ name: "as_of", required: false }),
+    openapi.ApiQuery({ name: "side", required: false }),
     (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER', 'WAREHOUSE'),
     (0, common_1.Get)('ap-ar/gold/partners'),
     openapi.ApiResponse({ status: 200 }),
+    __param(0, (0, common_1.Query)('as_of')),
+    __param(1, (0, common_1.Query)('side')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], LedgerController.prototype, "goldApArByPartner", null);
 __decorate([
@@ -136,7 +145,7 @@ __decorate([
     __param(0, (0, common_1.Query)()),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [history_range_dto_1.HistoryRangeDto, Object]),
+    __metadata("design:paramtypes", [gold_apar_dto_1.GoldApArHistoryDto, Object]),
     __metadata("design:returntype", void 0)
 ], LedgerController.prototype, "goldApArHistory", null);
 exports.LedgerController = LedgerController = __decorate([

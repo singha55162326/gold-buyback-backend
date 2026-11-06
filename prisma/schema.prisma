@@ -1152,6 +1152,12 @@ model Order {
   receivedAmount Decimal     @default(0) @db.Decimal(18, 4)
   /// totalAmount - receivedAmount; when it reaches 0 the order auto-completes.
   balanceAmount  Decimal     @default(0) @db.Decimal(18, 4)
+  /// Currency agreed with customer for the order (LAK, THB, USD).
+  currency       Currency    @default(LAK)
+  /// Original total amount agreed in order currency (e.g. 5,000 THB).
+  originalTotalAmount Decimal? @db.Decimal(18, 4)
+  /// Exchange rate at order creation time (LAK per foreign currency unit, 1 for LAK).
+  exchangeRate   Decimal?    @db.Decimal(18, 6)
   status         OrderStatus @default(ORDER_PLACED)
   note           String?
   createdById    String

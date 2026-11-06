@@ -143,11 +143,14 @@ class CreateOrderDto {
     weightG;
     quantity;
     totalAmount;
+    currency;
+    originalTotalAmount;
+    exchangeRate;
     note;
     receipt;
     receipts;
     static _OPENAPI_METADATA_FACTORY() {
-        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, billNo: { required: true, type: () => String, description: "\u0EC0\u0EA5\u0E81\u0E9A\u0EB4\u0E99 4 \u0E95\u0EBB\u0EA7\u0EAB\u0EBC\u0EB1\u0E81 (TOR \u00A77).", pattern: "^\\d{6}$" }, productType: { required: true, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: true, type: () => String, description: "\u0E8A\u0EB7\u0EC8\u0E9E\u0EB0\u0E99\u0EB1\u0E81\u0E87\u0EB2\u0E99 \u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A Order.", maxLength: 80 }, lines: { required: false, type: () => [require("./order.dto").OrderLineDto], description: "\u0EAB\u0EBC\u0EB2\u0E8D\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99\u0EC3\u0E99\u0E9A\u0EB4\u0E99\u0E94\u0EBD\u0EA7 (\u0E97\u0EB5\u0EC8\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0E82\u0ECD).\n\u0E9A\u0ECD\u0EC8\u0EAA\u0EBB\u0EC8\u0E87\u0EA1\u0EB2 = \u0E96\u0EB7\u0EA7\u0EC8\u0EB2\u0EC0\u0E9B\u0EB1\u0E99\u0E9A\u0EB4\u0E99\u0EC1\u0E96\u0EA7\u0E94\u0EBD\u0EA7 \u0E95\u0EB2\u0EA1\u0E8A\u0EC8\u0EAD\u0E87\u0E82\u0EC9\u0EB2\u0E87\u0EA5\u0EB8\u0EC8\u0EA1 (client \u0EC0\u0E81\u0EBB\u0EC8\u0EB2).", minItems: 1 }, goldItemId: { required: false, type: () => String }, weightG: { required: false, type: () => String }, quantity: { required: false, type: () => Number, minimum: 1 }, totalAmount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 }, receipt: { required: false, type: () => require("./order.dto").OrderReceiptDto }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto] } };
+        return { phone: { required: true, type: () => String, pattern: "^\\d{8}$" }, billNo: { required: true, type: () => String, description: "\u0EC0\u0EA5\u0E81\u0E9A\u0EB4\u0E99 4 \u0E95\u0EBB\u0EA7\u0EAB\u0EBC\u0EB1\u0E81 (TOR \u00A77).", pattern: "^\\d{6}$" }, productType: { required: true, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: true, type: () => String, description: "\u0E8A\u0EB7\u0EC8\u0E9E\u0EB0\u0E99\u0EB1\u0E81\u0E87\u0EB2\u0E99 \u0E97\u0EB5\u0EC8\u0EAE\u0EB1\u0E9A Order.", maxLength: 80 }, lines: { required: false, type: () => [require("./order.dto").OrderLineDto], description: "\u0EAB\u0EBC\u0EB2\u0E8D\u0EA5\u0EB2\u0E8D\u0E81\u0EB2\u0E99\u0EC3\u0E99\u0E9A\u0EB4\u0E99\u0E94\u0EBD\u0EA7 (\u0E97\u0EB5\u0EC8\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0E82\u0ECD).\n\u0E9A\u0ECD\u0EC8\u0EAA\u0EBB\u0EC8\u0E87\u0EA1\u0EB2 = \u0E96\u0EB7\u0EA7\u0EC8\u0EB2\u0EC0\u0E9B\u0EB1\u0E99\u0E9A\u0EB4\u0E99\u0EC1\u0E96\u0EA7\u0E94\u0EBD\u0EA7 \u0E95\u0EB2\u0EA1\u0E8A\u0EC8\u0EAD\u0E87\u0E82\u0EC9\u0EB2\u0E87\u0EA5\u0EB8\u0EC8\u0EA1 (client \u0EC0\u0E81\u0EBB\u0EC8\u0EB2).", minItems: 1 }, goldItemId: { required: false, type: () => String }, weightG: { required: false, type: () => String }, quantity: { required: false, type: () => Number, minimum: 1 }, totalAmount: { required: true, type: () => String }, currency: { required: false, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, originalTotalAmount: { required: false, type: () => String }, exchangeRate: { required: false, type: () => String }, note: { required: false, type: () => String, maxLength: 500 }, receipt: { required: false, type: () => require("./order.dto").OrderReceiptDto }, receipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto] } };
     }
 }
 exports.CreateOrderDto = CreateOrderDto;
@@ -196,6 +199,21 @@ __decorate([
     (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຍອດລວມ' }),
     __metadata("design:type", String)
 ], CreateOrderDto.prototype, "totalAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['LAK', 'THB', 'USD']),
+    __metadata("design:type", String)
+], CreateOrderDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຍອດລວມຕາມສະກຸນເງິນ' }),
+    __metadata("design:type", String)
+], CreateOrderDto.prototype, "originalTotalAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ອັດຕາແລກປ່ຽນ' }),
+    __metadata("design:type", String)
+], CreateOrderDto.prototype, "exchangeRate", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
@@ -317,11 +335,14 @@ class UpdateOrderDto {
     supplierId;
     note;
     totalAmount;
+    currency;
+    originalTotalAmount;
+    exchangeRate;
     status;
     lines;
     receipts;
     static _OPENAPI_METADATA_FACTORY() {
-        return { phone: { required: false, type: () => String }, billNo: { required: false, type: () => String }, productType: { required: false, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: false, type: () => String }, supplierId: { required: false, type: () => String, nullable: true }, note: { required: false, type: () => String, nullable: true, maxLength: 500 }, totalAmount: { required: false, type: () => String }, status: { required: false, enum: ["COMPLETED", "CANCELLED", "ORDER_PLACED", "SENT_TO_SMITH", "RECEIVED_FROM_SMITH", "AWAITING_PICKUP"], enum: [
+        return { phone: { required: false, type: () => String }, billNo: { required: false, type: () => String }, productType: { required: false, enum: ["IT", "ITP"], enum: ['IT', 'ITP'] }, staffName: { required: false, type: () => String }, supplierId: { required: false, type: () => String, nullable: true }, note: { required: false, type: () => String, nullable: true, maxLength: 500 }, totalAmount: { required: false, type: () => String }, currency: { required: false, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, originalTotalAmount: { required: false, type: () => String }, exchangeRate: { required: false, type: () => String }, status: { required: false, enum: ["COMPLETED", "CANCELLED", "ORDER_PLACED", "SENT_TO_SMITH", "RECEIVED_FROM_SMITH", "AWAITING_PICKUP"], enum: [
                     'ORDER_PLACED',
                     'SENT_TO_SMITH',
                     'RECEIVED_FROM_SMITH',
@@ -368,6 +389,21 @@ __decorate([
     (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຍອດລວມ' }),
     __metadata("design:type", String)
 ], UpdateOrderDto.prototype, "totalAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['LAK', 'THB', 'USD']),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຍອດລວມຕາມສະກຸນເງິນ' }),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "originalTotalAmount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ອັດຕາແລກປ່ຽນ' }),
+    __metadata("design:type", String)
+], UpdateOrderDto.prototype, "exchangeRate", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)([

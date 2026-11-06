@@ -13,6 +13,7 @@ import { CodeGeneratorService } from '../../common/services/code-generator.servi
 import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { ApArPostingService } from '../../common/services/apar-posting.service';
+import { CashService } from '../cash/cash.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import type {
   CreateApArCashCategoryDto,
@@ -56,6 +57,7 @@ export class FinanceService {
     private readonly apar: ApArPostingService,
     private readonly range: HistoryRangeService,
     private readonly codes: CodeGeneratorService,
+    private readonly cash: CashService,
   ) {}
 
   /* ---------------------------------------------------------------- *
@@ -174,6 +176,51 @@ export class FinanceService {
 
     const day = await this.businessDay.current();
     const isIncome = category.kind === 'INCOME';
+
+    if (category.kind === 'EXPENSE') {
+      const [cashBalances, bankBalances] = await Promise.all([
+        this.cash.cashBalances(),
+        this.cash.bankBalances(),
+      ]);
+
+      const cashRequested = new Map<Currency, Decimal>();
+      const bankRequested = new Map<string, Decimal>();
+
+      for (const leg of resolved) {
+        if (leg.method === 'CASH') {
+          const prev = cashRequested.get(leg.currency) ?? dec(0);
+          cashRequested.set(leg.currency, prev.plus(leg.amount));
+        } else if (leg.method === 'BANK' && leg.bankAccountId) {
+          const key = `${leg.bankAccountId}:${leg.currency}`;
+          const prev = bankRequested.get(key) ?? dec(0);
+          bankRequested.set(key, prev.plus(leg.amount));
+        }
+      }
+
+      for (const [currency, reqAmount] of cashRequested) {
+        const bal = cashBalances.find((b) => b.currency === currency);
+        const currentBal = dec(bal?.balance ?? '0');
+        if (reqAmount.gt(currentBal)) {
+          throw new BadRequestException(
+            `ເງິນສົດ ${currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບລາຍຈ່າຍ (ມີ ${currentBal.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${reqAmount.toFixed()} ${currency})`,
+          );
+        }
+      }
+
+      for (const [key, reqAmount] of bankRequested) {
+        const [bankAccountId, currency] = key.split(':') as [string, Currency];
+        const bal = bankBalances.find(
+          (b) => b.bankAccountId === bankAccountId && b.currency === currency,
+        );
+        const currentBal = dec(bal?.actual ?? '0');
+        const bankName = bal?.bankNameLo ?? 'ທະນາຄານ';
+        if (reqAmount.gt(currentBal)) {
+          throw new BadRequestException(
+            `ຍອດເງິນ ${currency} ໃນບັນຊີ ${bankName} (Module Bank) ບໍ່ພໍສຳລັບລາຍຈ່າຍ (ມີ ${currentBal.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${reqAmount.toFixed()} ${currency})`,
+          );
+        }
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const rows = [];
@@ -423,6 +470,45 @@ export class FinanceService {
     const note = dto.note !== undefined ? dto.note : before.note;
     const kind = category.kind;
     const isIncome = kind === 'INCOME';
+
+    if (category.kind === 'EXPENSE') {
+      const [cashBalances, bankBalances] = await Promise.all([
+        this.cash.cashBalances(),
+        this.cash.bankBalances(),
+      ]);
+
+      if (method === 'CASH') {
+        const bal = cashBalances.find((b) => b.currency === currency);
+        let available = dec(bal?.balance ?? '0');
+        if (before.kind === 'EXPENSE' && before.method === 'CASH' && before.currency === currency) {
+          available = available.plus(dec(before.amount));
+        }
+        if (amount.gt(available)) {
+          throw new BadRequestException(
+            `ເງິນສົດ ${currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບລາຍຈ່າຍ (ມີ ${available.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${amount.toFixed()} ${currency})`,
+          );
+        }
+      } else if (method === 'BANK' && bankAccountId) {
+        const bal = bankBalances.find(
+          (b) => b.bankAccountId === bankAccountId && b.currency === currency,
+        );
+        let available = dec(bal?.actual ?? '0');
+        const bankName = bal?.bankNameLo ?? 'ທະນາຄານ';
+        if (
+          before.kind === 'EXPENSE' &&
+          before.method === 'BANK' &&
+          before.bankAccountId === bankAccountId &&
+          before.currency === currency
+        ) {
+          available = available.plus(dec(before.amount));
+        }
+        if (amount.gt(available)) {
+          throw new BadRequestException(
+            `ຍອດເງິນ ${currency} ໃນບັນຊີ ${bankName} (Module Bank) ບໍ່ພໍສຳລັບລາຍຈ່າຍ (ມີ ${available.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${amount.toFixed()} ${currency})`,
+          );
+        }
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const after = await tx.incomeExpenseTransaction.update({

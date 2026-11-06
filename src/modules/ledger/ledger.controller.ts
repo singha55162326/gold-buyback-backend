@@ -1,9 +1,11 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import type { ApArSide } from '@prisma/client';
 import { LedgerService } from './ledger.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { HistoryRangeDto } from '../../common/dto/history-range.dto';
+import { GoldApArHistoryDto } from './dto/gold-apar.dto';
 
 /**
  * Read-only accounting views (TOR §3.7, §8, §9). Every figure is derived from
@@ -54,19 +56,19 @@ export class LedgerController {
 
   @Roles('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER', 'WAREHOUSE')
   @Get('ap-ar/gold')
-  goldApAr() {
-    return this.ledger.goldApArSummary();
+  goldApAr(@Query('as_of') asOf?: string, @Query('side') side?: ApArSide) {
+    return this.ledger.goldApArSummary(asOf, side);
   }
 
   @Roles('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER', 'WAREHOUSE')
   @Get('ap-ar/gold/partners')
-  goldApArByPartner() {
-    return this.ledger.goldApArByPartner();
+  goldApArByPartner(@Query('as_of') asOf?: string, @Query('side') side?: ApArSide) {
+    return this.ledger.goldApArByPartner(asOf, side);
   }
 
   @Roles('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER', 'WAREHOUSE')
   @Get('ap-ar/gold/history')
-  goldApArHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+  goldApArHistory(@Query() query: GoldApArHistoryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.ledger.goldApArHistory(query, user);
   }
 }

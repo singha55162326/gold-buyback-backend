@@ -303,6 +303,11 @@ export class FeesService {
      * ແຖວໃດ ແລະ ລາຄາທີ່ເຄີຍອ້າງໄປແລ້ວ ຍັງຄົ້ນຄືນໄດ້ຄົບ.
      */
     const { created, board } = await this.prisma.$transaction(async (tx) => {
+      const previous = await tx.buybackDeductionRule.findFirst({
+        where: { tierCode: dto.tierCode },
+        orderBy: { effectiveAt: 'desc' },
+      });
+
       const rule = await tx.buybackDeductionRule.create({
         data: {
           tierCode: dto.tierCode,
@@ -322,8 +327,28 @@ export class FeesService {
 
       await this.audit.record(
         {
-          actorId, action: 'UPDATE', entity: 'BuybackDeductionRule', entityId: rule.id,
-          after: rule,
+          actorId,
+          action: 'UPDATE',
+          entity: 'BuybackDeductionRule',
+          entityId: rule.id,
+          before: previous
+            ? {
+                id: previous.id,
+                tierCode: previous.tierCode,
+                kind: previous.kind,
+                value: Number(previous.value),
+                tierLabel: tier.labelLo,
+                effectiveAt: previous.effectiveAt,
+              }
+            : null,
+          after: {
+            id: rule.id,
+            tierCode: rule.tierCode,
+            kind: rule.kind,
+            value: Number(rule.value),
+            tierLabel: tier.labelLo,
+            effectiveAt: rule.effectiveAt,
+          },
           summary: `ອັບເດດຄ່າຫັກຊື້ຄືນ ${tier.labelLo}`,
         },
         tx,

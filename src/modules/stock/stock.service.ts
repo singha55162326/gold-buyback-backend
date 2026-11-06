@@ -286,8 +286,8 @@ export class StockService {
       totalCost = accumulatedCost;
       perG = totalGoldG.gt(0) ? totalCost.div(totalGoldG) : dec(0);
     } else {
-      const wac = await this.stockLedger.currentWac();
-      perG = wac.pricePerG;
+      const newPos = await this.stockLedger.newPosition();
+      perG = newPos.weightG.gt(0) ? newPos.cost.div(newPos.weightG) : dec(0);
       totalCost = totalGoldG.mul(perG);
       for (const line of lines) {
         lineCosts.push(line.goldG.mul(perG));
@@ -731,8 +731,8 @@ export class StockService {
       }
       totalCost = totalGoldG.mul(perG);
     } else {
-      const wac = await this.stockLedger.currentWac();
-      perG = wac.pricePerG;
+      const newPos = await this.stockLedger.newPosition();
+      perG = newPos.weightG.gt(0) ? newPos.cost.div(newPos.weightG) : dec(0);
       totalCost = totalGoldG.mul(perG);
     }
     const day = await this.businessDay.current();
@@ -778,6 +778,7 @@ export class StockService {
           movementId: movement.id,
           createdById: user.id,
         });
+        await this.refreshSkuBalances(tx, day.id, dto.lines, 'OUT');
         await this.stockLedger.postOld(tx, {
           goldTypeId: dto.goldTypeId,
           businessDayId: day.id,
@@ -805,6 +806,7 @@ export class StockService {
           movementId: movement.id,
           createdById: user.id,
         });
+        await this.refreshSkuBalances(tx, day.id, dto.lines, 'IN');
       }
 
       await this.audit.record(
@@ -1721,21 +1723,25 @@ export class StockService {
 
         if (newGoldG.lte(0)) throw new BadRequestException('ນ້ຳໜັກລວມຕ້ອງໃຫຍ່ກວ່າ 0');
 
-        // Reverse old lines from SKU balance if scope NEW
+        // Reverse old lines from SKU balance if scope NEW or TRANSFER
+        const isNewIn =
+          movement.type === 'IN' || (movement.type === 'TRANSFER' && movement.scope === 'OLD');
         if (
-          movement.scope === 'NEW' &&
+          (movement.scope === 'NEW' || movement.type === 'TRANSFER') &&
           (movement.status === 'COMPLETED' || movement.status === 'APPROVED')
         ) {
+          const affectedSkuIds = new Set<string>();
           for (const line of movement.lines) {
             if (!line.goldSkuId) continue;
+            affectedSkuIds.add(line.goldSkuId);
             const bal = await tx.stockNewSkuBalance.findUnique({
               where: {
                 businessDayId_goldSkuId: { businessDayId: day.id, goldSkuId: line.goldSkuId },
               },
             });
             if (bal) {
-              const inQty = movement.type === 'IN' ? Math.max(0, bal.inQty - line.quantity) : bal.inQty;
-              const outQty = movement.type !== 'IN' ? Math.max(0, bal.outQty - line.quantity) : bal.outQty;
+              const inQty = isNewIn ? Math.max(0, bal.inQty - line.quantity) : bal.inQty;
+              const outQty = !isNewIn ? Math.max(0, bal.outQty - line.quantity) : bal.outQty;
               const balanceQty = bal.openingQty + inQty - outQty;
               const sku = await tx.goldSku.findUnique({ where: { id: line.goldSkuId } });
               const totalWeightG = dec(sku?.weightG ?? 0).mul(balanceQty);
@@ -1749,13 +1755,14 @@ export class StockService {
           // Apply new lines to SKU balance
           for (const line of parsedLines) {
             if (!line.goldSkuId) continue;
+            affectedSkuIds.add(line.goldSkuId);
             const key = {
               businessDayId_goldSkuId: { businessDayId: day.id, goldSkuId: line.goldSkuId },
             };
             const existing = await tx.stockNewSkuBalance.findUnique({ where: key });
             const openingQty = existing?.openingQty ?? 0;
-            const inQty = (existing?.inQty ?? 0) + (movement.type === 'IN' ? line.quantity : 0);
-            const outQty = (existing?.outQty ?? 0) + (movement.type !== 'IN' ? line.quantity : 0);
+            const inQty = (existing?.inQty ?? 0) + (isNewIn ? line.quantity : 0);
+            const outQty = (existing?.outQty ?? 0) + (!isNewIn ? line.quantity : 0);
             const balanceQty = openingQty + inQty - outQty;
             const sku = await tx.goldSku.findUnique({ where: { id: line.goldSkuId } });
             const totalWeightG = dec(sku?.weightG ?? 0).mul(balanceQty);
@@ -1772,6 +1779,18 @@ export class StockService {
                 totalWeightG: D(totalWeightG),
               },
             });
+          }
+
+          // Ensure no affected SKU balance went negative
+          for (const skuId of affectedSkuIds) {
+            const finalBal = await tx.stockNewSkuBalance.findUnique({
+              where: { businessDayId_goldSkuId: { businessDayId: day.id, goldSkuId: skuId } },
+            });
+            if (finalBal && finalBal.balanceQty < 0) {
+              throw new BadRequestException(
+                'ບໍ່ສາມາດແກ້ໄຂໄດ້ ເນື່ອງຈາກຍອດຄົງເຫຼືອ SKU ຈະຕິດລົບ (ມີການຕັດສະຕັອກອອກໄປແລ້ວ)',
+              );
+            }
           }
         }
 
@@ -1837,14 +1856,17 @@ export class StockService {
       });
 
       // Update StockNewLedger row
+      const isNewLedgerIn =
+        movement.type === 'IN' || (movement.type === 'TRANSFER' && movement.scope === 'OLD');
       await tx.stockNewLedger.updateMany({
         where: { movementId: id, deletedAt: null },
         data: {
-          partnerLabel: partner?.nameLo ?? movement.partner?.nameLo,
-          goldInG: movement.type === 'IN' ? D(totalGoldG) : D(dec(0)),
-          goldOutG: movement.type !== 'IN' ? D(totalGoldG) : D(dec(0)),
-          priceIn: movement.type === 'IN' ? D(totalCost) : D(dec(0)),
-          priceOut: movement.type !== 'IN' ? D(totalCost) : D(dec(0)),
+          partnerLabel:
+            movement.type === 'TRANSFER' ? null : (partner?.nameLo ?? movement.partner?.nameLo),
+          goldInG: isNewLedgerIn ? D(totalGoldG) : D(dec(0)),
+          goldOutG: !isNewLedgerIn ? D(totalGoldG) : D(dec(0)),
+          priceIn: isNewLedgerIn ? D(totalCost) : D(dec(0)),
+          priceOut: !isNewLedgerIn ? D(totalCost) : D(dec(0)),
         },
       });
       await this.recomputeNewLedgerRunningTotals(tx);
@@ -2070,12 +2092,14 @@ export class StockService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Reverse SKU balances if NEW scope
+      // 1. Reverse SKU balances if NEW scope or TRANSFER
+      const isNewIn =
+        movement.type === 'IN' || (movement.type === 'TRANSFER' && movement.scope === 'OLD');
       if (
-        movement.scope === 'NEW' &&
+        (movement.scope === 'NEW' || movement.type === 'TRANSFER') &&
         (movement.status === 'COMPLETED' || movement.status === 'APPROVED')
       ) {
-        if (movement.type === 'IN') {
+        if (isNewIn) {
           for (const line of movement.lines) {
             if (!line.goldSkuId) continue;
             const bal = await tx.stockNewSkuBalance.findUnique({
@@ -2086,6 +2110,11 @@ export class StockService {
             if (bal) {
               const inQty = Math.max(0, bal.inQty - line.quantity);
               const balanceQty = bal.openingQty + inQty - bal.outQty;
+              if (balanceQty < 0) {
+                throw new BadRequestException(
+                  'ບໍ່ສາມາດລຶບລາຍການນີ້ໄດ້ ເນື່ອງຈາກສິນຄ້າຖືກຕັດສະຕັອກອອກໄປແລ້ວ (ຍອດຄົງເຫຼືອຈະຕິດລົບ)',
+                );
+              }
               const sku = await tx.goldSku.findUnique({ where: { id: line.goldSkuId } });
               const totalWeightG = dec(sku?.weightG ?? 0).mul(balanceQty);
               await tx.stockNewSkuBalance.update({
@@ -2190,6 +2219,11 @@ export class StockService {
 
     const newOpeningQty = dto.openingQty;
     const newBalanceQty = newOpeningQty + balance.inQty - balance.outQty;
+    if (newBalanceQty < 0) {
+      throw new BadRequestException(
+        'ບໍ່ສາມາດປັບຈຳນວນຕັ້ງຕົ້ນໄດ້ ເນື່ອງຈາກຍອດຄົງເຫຼືອຈະຕິດລົບ (ມີຍອດຈ່າຍອອກໄປແລ້ວ)',
+      );
+    }
     const totalWeightG = dec(balance.goldSku.weightG).mul(newBalanceQty);
 
     const updated = await this.prisma.stockNewSkuBalance.update({

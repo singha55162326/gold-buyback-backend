@@ -77,6 +77,16 @@ let CashService = class CashService {
         if (seen.size !== lines.length) {
             throw new common_1.BadRequestException('ແຕ່ລະສະກຸນເງິນປ້ອນໄດ້ພຽງຄັ້ງດຽວ');
         }
+        if (dto.direction === 'HANDOVER') {
+            const currentWallet = await this.walletBalance(user.id);
+            for (const line of lines) {
+                const bal = currentWallet.balances.find((b) => b.currency === line.currency);
+                const currentBal = (0, domain_1.dec)(bal?.balance ?? '0');
+                if (line.amount.gt(currentBal)) {
+                    throw new common_1.BadRequestException(`ຍອດເງິນ ${line.currency} ໃນກະເປົ໋າບໍ່ພໍສຳລັບມອບເງິນ (ມີ ${currentBal.toFixed()}, ຕ້ອງການມອບ ${line.amount.toFixed()})`);
+                }
+            }
+        }
         const request = await this.prisma.$transaction(async (tx) => {
             const created = await tx.cashRequest.create({
                 data: {
@@ -120,6 +130,37 @@ let CashService = class CashService {
             throw new common_1.NotFoundException('ບໍ່ພົບລາຍການ');
         const next = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
         this.approval.assertTransition(request.status, next);
+        if (dto.decision === 'APPROVED' && request.direction === 'WITHDRAW') {
+            const [currentBalances, reservedLines] = await Promise.all([
+                this.cashBalances(),
+                this.prisma.cashRequestLine.findMany({
+                    where: {
+                        request: {
+                            direction: 'WITHDRAW',
+                            status: 'APPROVED',
+                            deletedAt: null,
+                            id: { not: id },
+                        },
+                    },
+                    select: { currency: true, amount: true },
+                }),
+            ]);
+            const reservedMap = new Map();
+            for (const line of reservedLines) {
+                const prev = reservedMap.get(line.currency) ?? (0, domain_1.dec)(0);
+                reservedMap.set(line.currency, prev.plus((0, domain_1.dec)(line.amount.toFixed())));
+            }
+            for (const line of request.lines) {
+                const bal = currentBalances.find((b) => b.currency === line.currency);
+                const currentBal = (0, domain_1.dec)(bal?.balance ?? '0');
+                const reserved = reservedMap.get(line.currency) ?? (0, domain_1.dec)(0);
+                const available = currentBal.minus(reserved);
+                const requested = (0, domain_1.dec)(line.amount.toFixed());
+                if (requested.gt(available)) {
+                    throw new common_1.BadRequestException(`ເງິນສົດ ${line.currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບການເບີກ: ມີເຫຼືອ ${available.toFixed()}, ຕ້ອງການ ${requested.toFixed()}`);
+                }
+            }
+        }
         return this.prisma.$transaction(async (tx) => {
             const updated = await tx.cashRequest.update({
                 where: { id },
@@ -168,6 +209,17 @@ let CashService = class CashService {
             throw new common_1.ConflictException('ມີພຽງຜູ້ຮ້ອງຂໍເທົ່ານັ້ນທີ່ຢືນຢັນໄດ້');
         }
         this.approval.assertTransition(request.status, 'COMPLETED');
+        if (request.direction === 'WITHDRAW') {
+            const currentBalances = await this.cashBalances();
+            for (const line of request.lines) {
+                const bal = currentBalances.find((b) => b.currency === line.currency);
+                const currentBal = (0, domain_1.dec)(bal?.balance ?? '0');
+                const requested = (0, domain_1.dec)(line.amount.toFixed());
+                if (requested.gt(currentBal)) {
+                    throw new common_1.ConflictException(`ເງິນສົດ ${line.currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບການຈ່າຍອອກຕົວຈິງ (ມີ ${currentBal.toFixed()}, ຕ້ອງການ ${requested.toFixed()})`);
+                }
+            }
+        }
         const day = await this.businessDay.current();
         const type = request.direction === 'WITHDRAW' ? 'OUT' : 'IN';
         return this.prisma.$transaction(async (tx) => {
@@ -343,7 +395,23 @@ let CashService = class CashService {
                     if (row.currency !== currency)
                         continue;
                     const amount = (0, domain_1.dec)(row.amount.toFixed());
-                    if (CASH_SIGN[row.type] === 1)
+                    // Cash movements from the perspective of the cashier's drawer (wallet):
+                    let isDrawerInflow = false;
+                    if (row.refType === 'CashRequest') {
+                        // WITHDRAW from vault (shop OUT) = money INTO drawer (Inflow)
+                        // HANDOVER to vault (shop IN) = money OUT of drawer (Outflow)
+                        isDrawerInflow = row.type === 'OUT';
+                    }
+                    else if (row.refType === 'GoldCredit') {
+                        isDrawerInflow = true;
+                    }
+                    else if (['Buyback', 'GoldExchange', 'ShiftClose'].includes(row.refType ?? '')) {
+                        isDrawerInflow = false;
+                    }
+                    else {
+                        isDrawerInflow = CASH_SIGN[row.type] === 1;
+                    }
+                    if (isDrawerInflow)
                         inflow = inflow.plus(amount);
                     else
                         outflow = outflow.plus(amount);
@@ -385,6 +453,14 @@ let CashService = class CashService {
         const bank = await this.prisma.bankAccount.findUnique({ where: { id: dto.bankAccountId } });
         if (!bank)
             throw new common_1.NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+        if (dto.type === 'WITHDRAW') {
+            const balances = await this.bankBalances();
+            const bankBal = balances.find((b) => b.bankAccountId === dto.bankAccountId && b.currency === dto.currency);
+            const currentActual = (0, domain_1.dec)(bankBal?.actual ?? '0');
+            if (amount.gt(currentActual)) {
+                throw new common_1.BadRequestException(`ຍອດເງິນ ${dto.currency} ໃນບັນຊີ ${bank.nameLo} ບໍ່ພໍສຳລັບການຖອນ: ມີເຫຼືອ ${currentActual.toFixed()}, ຕ້ອງການຖອນ ${amount.toFixed()}`);
+            }
+        }
         const day = await this.businessDay.current();
         const created = await this.prisma.bankTransaction.create({
             data: {
@@ -476,6 +552,9 @@ let CashService = class CashService {
     }
     /** ADMIN/MANAGER only — enforced by @Roles on the controller. */
     async setBankNetBalance(dto, user) {
+        const bank = await this.prisma.bankAccount.findUnique({ where: { id: dto.bankAccountId } });
+        if (!bank)
+            throw new common_1.NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
         const day = await this.businessDay.current();
         const netAmount = (0, domain_1.dec)(dto.netAmount);
         const saved = await this.prisma.bankNetBalance.upsert({
@@ -500,8 +579,8 @@ let CashService = class CashService {
             action: 'UPDATE',
             entity: 'BankNetBalance',
             entityId: saved.id,
-            after: { currency: dto.currency, netAmount: netAmount.toFixed() },
-            summary: `ຕັ້ງເງິນ Bank ສຸດທິ ${dto.currency} = ${netAmount.toFixed(0)}`,
+            after: { bank: bank.code, currency: dto.currency, netAmount: netAmount.toFixed() },
+            summary: `ຕັ້ງເງິນ Bank ສຸດທິ ${bank.nameLo} ${dto.currency} = ${netAmount.toFixed(0)}`,
         });
         return saved;
     }

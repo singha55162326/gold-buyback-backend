@@ -82,6 +82,19 @@ export class CashService {
       throw new BadRequestException('ແຕ່ລະສະກຸນເງິນປ້ອນໄດ້ພຽງຄັ້ງດຽວ');
     }
 
+    if (dto.direction === 'HANDOVER') {
+      const currentWallet = await this.walletBalance(user.id);
+      for (const line of lines) {
+        const bal = currentWallet.balances.find((b) => b.currency === line.currency);
+        const currentBal = dec(bal?.balance ?? '0');
+        if (line.amount.gt(currentBal)) {
+          throw new BadRequestException(
+            `ຍອດເງິນ ${line.currency} ໃນກະເປົ໋າບໍ່ພໍສຳລັບມອບເງິນ (ມີ ${currentBal.toFixed()}, ຕ້ອງການມອບ ${line.amount.toFixed()})`,
+          );
+        }
+      }
+    }
+
     const request = await this.prisma.$transaction(async (tx) => {
       const created = await tx.cashRequest.create({
         data: {
@@ -137,6 +150,43 @@ export class CashService {
 
     const next = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
     this.approval.assertTransition(request.status, next);
+
+    if (dto.decision === 'APPROVED' && request.direction === 'WITHDRAW') {
+      const [currentBalances, reservedLines] = await Promise.all([
+        this.cashBalances(),
+        this.prisma.cashRequestLine.findMany({
+          where: {
+            request: {
+              direction: 'WITHDRAW',
+              status: 'APPROVED',
+              deletedAt: null,
+              id: { not: id },
+            },
+          },
+          select: { currency: true, amount: true },
+        }),
+      ]);
+
+      const reservedMap = new Map<string, Decimal>();
+      for (const line of reservedLines) {
+        const prev = reservedMap.get(line.currency) ?? dec(0);
+        reservedMap.set(line.currency, prev.plus(dec(line.amount.toFixed())));
+      }
+
+      for (const line of request.lines) {
+        const bal = currentBalances.find((b) => b.currency === line.currency);
+        const currentBal = dec(bal?.balance ?? '0');
+        const reserved = reservedMap.get(line.currency) ?? dec(0);
+        const available = currentBal.minus(reserved);
+        const requested = dec(line.amount.toFixed());
+
+        if (requested.gt(available)) {
+          throw new BadRequestException(
+            `ເງິນສົດ ${line.currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບການເບີກ: ມີເຫຼືອ ${available.toFixed()}, ຕ້ອງການ ${requested.toFixed()}`,
+          );
+        }
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.cashRequest.update({
@@ -198,6 +248,20 @@ export class CashService {
     }
 
     this.approval.assertTransition(request.status, 'COMPLETED');
+
+    if (request.direction === 'WITHDRAW') {
+      const currentBalances = await this.cashBalances();
+      for (const line of request.lines) {
+        const bal = currentBalances.find((b) => b.currency === line.currency);
+        const currentBal = dec(bal?.balance ?? '0');
+        const requested = dec(line.amount.toFixed());
+        if (requested.gt(currentBal)) {
+          throw new ConflictException(
+            `ເງິນສົດ ${line.currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບການຈ່າຍອອກຕົວຈິງ (ມີ ${currentBal.toFixed()}, ຕ້ອງການ ${requested.toFixed()})`,
+          );
+        }
+      }
+    }
 
     const day = await this.businessDay.current();
     const type = request.direction === 'WITHDRAW' ? 'OUT' : 'IN';
@@ -395,7 +459,22 @@ export class CashService {
         for (const row of rows) {
           if (row.currency !== currency) continue;
           const amount = dec(row.amount.toFixed());
-          if (CASH_SIGN[row.type] === 1) inflow = inflow.plus(amount);
+
+          // Cash movements from the perspective of the cashier's drawer (wallet):
+          let isDrawerInflow = false;
+          if (row.refType === 'CashRequest') {
+            // WITHDRAW from vault (shop OUT) = money INTO drawer (Inflow)
+            // HANDOVER to vault (shop IN) = money OUT of drawer (Outflow)
+            isDrawerInflow = row.type === 'OUT';
+          } else if (row.refType === 'GoldCredit') {
+            isDrawerInflow = true;
+          } else if (['Buyback', 'GoldExchange', 'ShiftClose'].includes(row.refType ?? '')) {
+            isDrawerInflow = false;
+          } else {
+            isDrawerInflow = CASH_SIGN[row.type] === 1;
+          }
+
+          if (isDrawerInflow) inflow = inflow.plus(amount);
           else outflow = outflow.plus(amount);
         }
         return {
@@ -438,6 +517,19 @@ export class CashService {
 
     const bank = await this.prisma.bankAccount.findUnique({ where: { id: dto.bankAccountId } });
     if (!bank) throw new NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+
+    if (dto.type === 'WITHDRAW') {
+      const balances = await this.bankBalances();
+      const bankBal = balances.find(
+        (b) => b.bankAccountId === dto.bankAccountId && b.currency === dto.currency,
+      );
+      const currentActual = dec(bankBal?.actual ?? '0');
+      if (amount.gt(currentActual)) {
+        throw new BadRequestException(
+          `ຍອດເງິນ ${dto.currency} ໃນບັນຊີ ${bank.nameLo} ບໍ່ພໍສຳລັບການຖອນ: ມີເຫຼືອ ${currentActual.toFixed()}, ຕ້ອງການຖອນ ${amount.toFixed()}`,
+        );
+      }
+    }
 
     const day = await this.businessDay.current();
 
@@ -542,6 +634,9 @@ export class CashService {
 
   /** ADMIN/MANAGER only — enforced by @Roles on the controller. */
   async setBankNetBalance(dto: SetBankNetBalanceDto, user: AuthenticatedUser) {
+    const bank = await this.prisma.bankAccount.findUnique({ where: { id: dto.bankAccountId } });
+    if (!bank) throw new NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
+
     const day = await this.businessDay.current();
     const netAmount = dec(dto.netAmount);
 
@@ -568,8 +663,8 @@ export class CashService {
       action: 'UPDATE',
       entity: 'BankNetBalance',
       entityId: saved.id,
-      after: { currency: dto.currency, netAmount: netAmount.toFixed() },
-      summary: `ຕັ້ງເງິນ Bank ສຸດທິ ${dto.currency} = ${netAmount.toFixed(0)}`,
+      after: { bank: bank.code, currency: dto.currency, netAmount: netAmount.toFixed() },
+      summary: `ຕັ້ງເງິນ Bank ສຸດທິ ${bank.nameLo} ${dto.currency} = ${netAmount.toFixed(0)}`,
     });
 
     return saved;
