@@ -10,8 +10,21 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { HistoryRangeDto } from '../../../common/dto/history-range.dto';
 import { IsDecimalString } from '../../../common/dto/decimal-string.validator';
+
+export class StockOldHistoryQueryDto extends HistoryRangeDto {
+  @ApiPropertyOptional({ description: 'ປະເພດຄຳ ID' })
+  @IsOptional()
+  @IsString()
+  goldTypeId?: string;
+
+  @ApiPropertyOptional({ description: 'ຄົ້ນຫາ (ແຫຼ່ງ, ປະເພດ, ຫຼື ລະຫັດບິນ)' })
+  @IsOptional()
+  @IsString()
+  q?: string;
+}
 
 export class StockLineDto {
   /** Stock (NEW) lines reference a SKU. */

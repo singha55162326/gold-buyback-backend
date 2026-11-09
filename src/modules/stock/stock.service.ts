@@ -32,6 +32,7 @@ import type {
   UpdateSkuBalanceDto,
   UpdateOldTypeBalanceDto,
   UpdateOldLedgerRowDto,
+  StockOldHistoryQueryDto,
 } from './dto/stock.dto';
 
 const D = (value: Decimal) => new Prisma.Decimal(value.toFixed());
@@ -1232,23 +1233,46 @@ export class StockService {
     return this.range.page(await this.audit.withCreatorNames(rows), total, range);
   }
 
-  async oldHistory(query: HistoryRangeDto, user?: AuthenticatedUser) {
+  async oldHistory(query: StockOldHistoryQueryDto, user?: AuthenticatedUser) {
     const range = this.range.resolve(query, user);
-    const where = { deletedAt: null, businessDate: HistoryRangeService.dayWindow(range) };
+    const where: Prisma.StockOldLedgerWhereInput = {
+      deletedAt: null,
+      businessDate: HistoryRangeService.dayWindow(range),
+      ...(query.goldTypeId ? { goldTypeId: query.goldTypeId } : {}),
+      ...(query.q && query.q.trim()
+        ? {
+            OR: [
+              { partnerLabel: { contains: query.q.trim(), mode: 'insensitive' } },
+              { typeLabel: { contains: query.q.trim(), mode: 'insensitive' } },
+              { movement: { code: { contains: query.q.trim(), mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.stockOldLedger.findMany({
         where,
         include: {
           goldType: true,
           movement: {
-            include: {
-              lines: {
-                include: {
-                  goldSku: { include: { goldItem: true } },
-                  goldType: true,
-                  goldItem: true,
-                },
-              },
+            select: {
+              id: true,
+              code: true,
+              scope: true,
+              type: true,
+              status: true,
+              partnerId: true,
+              transformType: true,
+              goldPercent: true,
+              expectedReturnG: true,
+              totalQuantity: true,
+              totalGoldG: true,
+              totalCost: true,
+              pricePerG: true,
+              pricePerBaht: true,
+              laborFeeThb: true,
+              note: true,
+              createdAt: true,
               partner: true,
             },
           },
@@ -2394,7 +2418,21 @@ export class StockService {
     });
     if (!row) throw new NotFoundException('ບໍ່ພົບລາຍການປະຫວັດສາງຄຳເກົ່າ');
 
-    const day = await this.businessDay.current();
+    if (
+      row.typeLabel.startsWith('Buyback') ||
+      row.typeLabel.startsWith('Exchange') ||
+      row.typeLabel.startsWith('Handover') ||
+      row.typeLabel.startsWith('ມອບຄຳ')
+    ) {
+      throw new BadRequestException(
+        `ບໍ່ສາມາດແກ້ໄຂລາຍການທີ່ສ້າງຈາກລະບົບ ${row.typeLabel.split(' ')[0]} ໂດຍກົງໄດ້ — ກະລຸນາຈັດການຜ່ານລະບົບຕົ້ນທາງ`,
+      );
+    }
+
+    const rowDay = await this.prisma.businessDay.findFirst({
+      where: { date: row.businessDate },
+    });
+    const day = rowDay ?? (await this.businessDay.current());
     const isIn = toDec(row.goldInG).gt(0) || toDec(row.goldOutG).eq(0);
     const newWeight = dto.weightG !== undefined ? dec(dto.weightG) : isIn ? toDec(row.goldInG) : toDec(row.goldOutG);
     if (newWeight.lte(0)) throw new BadRequestException('ນ້ຳໜັກຕ້ອງໃຫຍ່ກວ່າ 0');
@@ -2468,7 +2506,21 @@ export class StockService {
       return this.deleteMovement(row.movementId, user);
     }
 
-    const day = await this.businessDay.current();
+    if (
+      row.typeLabel.startsWith('Buyback') ||
+      row.typeLabel.startsWith('Exchange') ||
+      row.typeLabel.startsWith('Handover') ||
+      row.typeLabel.startsWith('ມອບຄຳ')
+    ) {
+      throw new BadRequestException(
+        `ບໍ່ສາມາດລຶບລາຍການທີ່ສ້າງຈາກລະບົບ ${row.typeLabel.split(' ')[0]} ໂດຍກົງໄດ້ — ກະລຸນາຈັດການຜ່ານລະບົບຕົ້ນທາງ`,
+      );
+    }
+
+    const rowDay = await this.prisma.businessDay.findFirst({
+      where: { date: row.businessDate },
+    });
+    const day = rowDay ?? (await this.businessDay.current());
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
@@ -2566,43 +2618,51 @@ export class StockService {
   }
 
   async recomputeNewLedgerRunningTotals(tx: Prisma.TransactionClient) {
-    const rows = await tx.stockNewLedger.findMany({
-      where: { deletedAt: null },
-      orderBy: [{ businessDate: 'asc' }, { sequence: 'asc' }],
-    });
-    let runningWeight = dec(0);
-    let runningCost = dec(0);
-    for (const row of rows) {
-      runningWeight = runningWeight.plus(toDec(row.goldInG)).minus(toDec(row.goldOutG));
-      runningCost = runningCost.plus(toDec(row.priceIn)).minus(toDec(row.priceOut));
-      await tx.stockNewLedger.update({
-        where: { id: row.id },
-        data: {
-          weightG: D(runningWeight),
-          cost: D(runningCost),
-        },
-      });
-    }
+    await tx.$executeRaw`
+      WITH calculated AS (
+        SELECT 
+          id,
+          SUM("goldInG" - "goldOutG") OVER (
+            ORDER BY "businessDate" ASC, sequence ASC
+          ) AS new_weight_g,
+          SUM("priceIn" - "priceOut") OVER (
+            ORDER BY "businessDate" ASC, sequence ASC
+          ) AS new_cost
+        FROM stock_new_ledger
+        WHERE "deletedAt" IS NULL
+      )
+      UPDATE stock_new_ledger l
+      SET 
+        "weightG" = c.new_weight_g,
+        cost = c.new_cost
+      FROM calculated c
+      WHERE l.id = c.id
+        AND (l."weightG" != c.new_weight_g OR l.cost != c.new_cost);
+    `;
   }
 
   async recomputeOldLedgerRunningTotals(tx: Prisma.TransactionClient) {
-    const rows = await tx.stockOldLedger.findMany({
-      where: { deletedAt: null },
-      orderBy: [{ businessDate: 'asc' }, { sequence: 'asc' }],
-    });
-    let runningWeight = dec(0);
-    let runningCost = dec(0);
-    for (const row of rows) {
-      runningWeight = runningWeight.plus(toDec(row.goldInG)).minus(toDec(row.goldOutG));
-      runningCost = runningCost.plus(toDec(row.priceIn)).minus(toDec(row.priceOut));
-      await tx.stockOldLedger.update({
-        where: { id: row.id },
-        data: {
-          weightG: D(runningWeight),
-          cost: D(runningCost),
-        },
-      });
-    }
+    await tx.$executeRaw`
+      WITH calculated AS (
+        SELECT 
+          id,
+          SUM("goldInG" - "goldOutG") OVER (
+            ORDER BY "businessDate" ASC, sequence ASC
+          ) AS new_weight_g,
+          SUM("priceIn" - "priceOut") OVER (
+            ORDER BY "businessDate" ASC, sequence ASC
+          ) AS new_cost
+        FROM stock_old_ledger
+        WHERE "deletedAt" IS NULL
+      )
+      UPDATE stock_old_ledger l
+      SET 
+        "weightG" = c.new_weight_g,
+        cost = c.new_cost
+      FROM calculated c
+      WHERE l.id = c.id
+        AND (l."weightG" != c.new_weight_g OR l.cost != c.new_cost);
+    `;
   }
 
   async recomputeGoldApArRunningTotals(

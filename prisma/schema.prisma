@@ -1367,6 +1367,8 @@ model StockNewLedger {
   movement StockMovement? @relation(fields: [movementId], references: [id])
 
   @@unique([businessDate, sequence])
+  @@index([movementId])
+  @@index([deletedAt, businessDate, sequence])
   @@index([createdAt])
   @@index([businessDate])
   @@map("stock_new_ledger")
@@ -1416,6 +1418,9 @@ model StockOldLedger {
   goldType GoldType       @relation(fields: [goldTypeId], references: [id])
 
   @@unique([businessDate, sequence])
+  @@index([movementId])
+  @@index([deletedAt, businessDate, sequence])
+  @@index([goldTypeId, businessDate])
   @@index([goldTypeId, createdAt])
   @@index([businessDate])
   @@map("stock_old_ledger")

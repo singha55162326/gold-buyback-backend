@@ -26,6 +26,7 @@ import {
   UpdateSkuBalanceDto,
   UpdateOldTypeBalanceDto,
   UpdateOldLedgerRowDto,
+  StockOldHistoryQueryDto,
 } from './dto/stock.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -61,7 +62,7 @@ export class StockController {
   }
 
   @Get('old/history')
-  oldHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
+  oldHistory(@Query() query: StockOldHistoryQueryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.stock.oldHistory(query, user);
   }
 
