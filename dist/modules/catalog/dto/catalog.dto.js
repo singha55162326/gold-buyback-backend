@@ -13,6 +13,7 @@ exports.UpdatePartnerDto = exports.UpdateCabinetDto = exports.UpdateGoldItemDto 
 const openapi = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
+const client_1 = require("@prisma/client");
 /**
  * `code` is no longer accepted on create — it is issued by
  * CodeGeneratorService so two people saving at once cannot collide, and so
@@ -80,9 +81,10 @@ __decorate([
 class CreatePartnerDto extends LegacyCode {
     nameLo;
     direction;
+    type;
     tracksGoldApAr;
     static _OPENAPI_METADATA_FACTORY() {
-        return { nameLo: { required: true, type: () => String, minLength: 1, maxLength: 80 }, direction: { required: true, enum: ["IN", "OUT", "BOTH"], enum: ['IN', 'OUT', 'BOTH'] }, tracksGoldApAr: { required: false, type: () => Boolean } };
+        return { nameLo: { required: true, type: () => String, minLength: 1, maxLength: 80 }, direction: { required: true, enum: ["IN", "OUT", "BOTH"], enum: ['IN', 'OUT', 'BOTH'] }, type: { required: false, enum: ["FACTORY", "SMITH", "SUPPLIER", "INTERNAL"], enum: ['FACTORY', 'SMITH', 'SUPPLIER', 'INTERNAL'] }, tracksGoldApAr: { required: false, type: () => Boolean } };
     }
 }
 exports.CreatePartnerDto = CreatePartnerDto;
@@ -96,6 +98,11 @@ __decorate([
     (0, class_validator_1.IsIn)(['IN', 'OUT', 'BOTH']),
     __metadata("design:type", String)
 ], CreatePartnerDto.prototype, "direction", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['FACTORY', 'SMITH', 'SUPPLIER', 'INTERNAL']),
+    __metadata("design:type", String)
+], CreatePartnerDto.prototype, "type", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
@@ -175,10 +182,11 @@ __decorate([
 class UpdatePartnerDto {
     nameLo;
     direction;
+    type;
     tracksGoldApAr;
     isActive;
     static _OPENAPI_METADATA_FACTORY() {
-        return { nameLo: { required: false, type: () => String, minLength: 1, maxLength: 80 }, direction: { required: false, enum: ["IN", "OUT", "BOTH"], enum: ['IN', 'OUT', 'BOTH'] }, tracksGoldApAr: { required: false, type: () => Boolean }, isActive: { required: false, type: () => Boolean } };
+        return { nameLo: { required: false, type: () => String, minLength: 1, maxLength: 80 }, direction: { required: false, enum: ["IN", "OUT", "BOTH"], enum: ['IN', 'OUT', 'BOTH'] }, type: { required: false, enum: ["FACTORY", "SMITH", "SUPPLIER", "INTERNAL"], enum: ['FACTORY', 'SMITH', 'SUPPLIER', 'INTERNAL'] }, tracksGoldApAr: { required: false, type: () => Boolean }, isActive: { required: false, type: () => Boolean } };
     }
 }
 exports.UpdatePartnerDto = UpdatePartnerDto;
@@ -194,6 +202,11 @@ __decorate([
     (0, class_validator_1.IsIn)(['IN', 'OUT', 'BOTH']),
     __metadata("design:type", String)
 ], UpdatePartnerDto.prototype, "direction", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['FACTORY', 'SMITH', 'SUPPLIER', 'INTERNAL']),
+    __metadata("design:type", String)
+], UpdatePartnerDto.prototype, "type", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),

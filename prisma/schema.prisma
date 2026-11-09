@@ -144,6 +144,14 @@ enum PartnerDirection {
   BOTH
 }
 
+/// ປະເພດຄູ່ຄ້າ: ໂຮງງານ (FACTORY), ຊ່າງ (SMITH), ຜູ້ສະໜອງ (SUPPLIER), ຈຸດພາຍໃນ/ອື່ນໆ (INTERNAL).
+enum PartnerType {
+  FACTORY  // ໂຮງງານ — ຕິດຕາມ Stock Out ໄປ FACTORY (ລໍຖ້າປະເມີນນ້ຳໜັກກ່ອນຕັດຍອດ)
+  SMITH    // ຊ່າງ / ຊ່າງນອກ — ສາມາດກຳນົດ %ຄຳ ເພື່ອຄຳນວນນ້ຳໜັກຄາດວ່າຈະໄດ້ຮັບ
+  SUPPLIER // ຜູ້ສະໜອງ / Vendor — ຮັບຄຳໃໝ່ເຂົ້າສາງ ຫຼື ສົ່ງຄຳຊຳລະ
+  INTERNAL // ຈຸດພາຍໃນ / ອື່ນໆ
+}
+
 /// ແປງສະພາບ — TOR §7.2
 enum TransformType {
   DYE   // ຍ້ອມ
@@ -603,6 +611,7 @@ model PartnerSource {
   code        String           @unique
   nameLo      String
   direction   PartnerDirection
+  type        PartnerType      @default(INTERNAL)
   /// True when gold movements with this partner post to AP/AR (GOLD).
   tracksGoldApAr Boolean       @default(false)
   sortOrder   Int              @default(0)
@@ -644,6 +653,7 @@ model BankAccount {
   orderReceipts     OrderReceipt[]
   incomeExpenses    IncomeExpenseTransaction[]
   advances          AdvanceLedger[]
+  cashApArs         CashApArLedger[]
 
   /// ຊື່ຊ້ຳກັນບໍ່ໄດ້: ດັດສະນີ SQL ດິບ `bank_accounts_name_lo_key` ຢູ່ migration
   /// 20261030090000_catalog_name_unique — `lower("nameLo")`.
@@ -1644,18 +1654,22 @@ model CashApArLedger {
   amountOut    Decimal     @default(0) @db.Decimal(18, 4)
   /// Running net after this row.
   balance      Decimal     @db.Decimal(18, 4)
+  method       PaymentMethod?
+  bankAccountId String?
   sequence     Int
   note         String?
   createdById  String
   createdAt    DateTime    @default(now())
   deletedAt    DateTime?
 
-  partner  PartnerSource?   @relation(fields: [partnerId], references: [id])
-  category ApArCashCategory? @relation(fields: [categoryId], references: [id])
+  partner     PartnerSource?    @relation(fields: [partnerId], references: [id])
+  category    ApArCashCategory? @relation(fields: [categoryId], references: [id])
+  bankAccount BankAccount?      @relation(fields: [bankAccountId], references: [id])
 
   @@unique([side, currency, businessDate, sequence])
   @@index([refType, refId])
   @@index([partnerId, side])
+  @@index([bankAccountId])
   @@index([businessDate])
   @@map("cash_ap_ar_ledger")
 }

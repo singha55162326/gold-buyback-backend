@@ -6,6 +6,7 @@ import { CurrentUser, type AuthenticatedUser } from '../../common/decorators/cur
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import { GoldApArHistoryDto } from './dto/gold-apar.dto';
+import { CohQueryDto } from './dto/coh-query.dto';
 
 /**
  * Read-only accounting views (TOR §3.7, §8, §9). Every figure is derived from
@@ -26,8 +27,8 @@ export class LedgerController {
   @Roles('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER')
   // COH ເປັນຍອດຢູ່ເວລາໜຶ່ງ: filter ເປັນວັນທີດຽວ (as_of) ບໍ່ແມ່ນຊ່ວງວັນທີ.
   @Get('coh')
-  coh(@Query('as_of') asOf?: string) {
-    return this.ledger.coh(asOf);
+  coh(@Query() query: CohQueryDto) {
+    return this.ledger.coh(query.as_of ?? query.asOf);
   }
 
   @Roles('ADMIN', 'MANAGER')

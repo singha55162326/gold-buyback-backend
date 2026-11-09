@@ -540,6 +540,16 @@ let FinanceService = class FinanceService {
         });
         if (!before)
             throw new common_1.NotFoundException('ບໍ່ພົບລາຍການຮັບຈ່າຍ');
+        if (before.kind === 'INCOME') {
+            await this.cash.assertSufficientFunds([
+                {
+                    method: before.method,
+                    bankAccountId: before.bankAccountId,
+                    currency: before.currency,
+                    amount: before.amount,
+                },
+            ], 'ການລຶບລາຍຮັບ (ຍອດຄົງເຫຼືອຈະຕິດລົບ)');
+        }
         return this.prisma.$transaction(async (tx) => {
             const now = new Date();
             const after = await tx.incomeExpenseTransaction.update({
@@ -740,6 +750,9 @@ let FinanceService = class FinanceService {
             throw new common_1.NotFoundException('ບໍ່ພົບ Supplier');
         if (!category)
             throw new common_1.NotFoundException('ບໍ່ພົບປະເພດລາຍການ');
+        if (dto.method === 'BANK' && !dto.bankAccountId) {
+            throw new common_1.BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
+        }
         const reason = side === 'AP' ? 'MANUAL_AP' : 'MANUAL_AR';
         return this.prisma.$transaction(async (tx) => {
             const row = await this.apar.postCash(tx, {
@@ -750,6 +763,8 @@ let FinanceService = class FinanceService {
                 categoryId: dto.categoryId,
                 note: dto.note,
                 createdById: user.id,
+                method: dto.method ?? null,
+                bankAccountId: dto.method === 'BANK' ? dto.bankAccountId : null,
             });
             await this.audit.record({
                 actorId: user.id, action: 'CREATE', entity: 'CashApArLedger', entityId: row?.id,
@@ -786,6 +801,16 @@ let FinanceService = class FinanceService {
         const day = await this.businessDay.current();
         const reason = side === 'AP' ? 'MANUAL_AP_PAYMENT' : 'MANUAL_AR_RECEIPT';
         const moneyLeaves = side === 'AP';
+        if (moneyLeaves) {
+            await this.cash.assertSufficientFunds([
+                {
+                    method: dto.method,
+                    bankAccountId: dto.bankAccountId,
+                    currency: dto.currency,
+                    amount,
+                },
+            ], `ການຊຳລະ ${side} (Cash)`);
+        }
         return this.prisma.$transaction(async (tx) => {
             if (dto.method === 'CASH') {
                 await tx.cashTransaction.create({
@@ -834,6 +859,8 @@ let FinanceService = class FinanceService {
                 categoryId: latestEntry?.categoryId ?? undefined,
                 note: dto.note ?? `ຊຳຣະ ${side} (Cash) ${partner.nameLo}`,
                 createdById: user.id,
+                method: dto.method,
+                bankAccountId: dto.method === 'BANK' ? dto.bankAccountId : null,
             });
             await this.audit.record({
                 actorId: user.id, action: 'UPDATE', entity: 'CashApArLedger', entityId: row?.id,
@@ -937,7 +964,7 @@ let FinanceService = class FinanceService {
         const [rows, total] = await this.prisma.$transaction([
             this.prisma.cashApArLedger.findMany({
                 where,
-                include: { partner: true, category: true },
+                include: { partner: true, category: true, bankAccount: true },
                 orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
                 skip: range.skip,
                 take: range.take,

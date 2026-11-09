@@ -283,6 +283,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "returnConsignment", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('FINANCIAL_CONTROLLER', 'PAYMENT', 'ADMIN', 'MANAGER'),
     (0, common_1.Get)('advance'),
     openapi.ApiResponse({ status: 200 }),
     __metadata("design:type", Function),
@@ -290,6 +291,7 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], FinanceController.prototype, "advanceSummary", null);
 __decorate([
+    (0, roles_decorator_1.Roles)('FINANCIAL_CONTROLLER', 'PAYMENT', 'ADMIN', 'MANAGER'),
     (0, common_1.Get)('advance/history'),
     openapi.ApiResponse({ status: 200 }),
     __param(0, (0, common_1.Query)()),

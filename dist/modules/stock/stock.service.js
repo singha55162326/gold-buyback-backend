@@ -276,7 +276,9 @@ let StockService = class StockService {
                 lineCosts.push(line.goldG.mul(perG));
             }
         }
-        const goldPercent = dto.goldPercent ? (0, domain_1.dec)(dto.goldPercent) : null;
+        const isFactory = dto.scope === 'OLD' &&
+            (partner.type === 'FACTORY' || (!partner.type && partner.code === 'FACTORY'));
+        const effectiveGoldPercent = isFactory ? null : (dto.goldPercent ? (0, domain_1.dec)(dto.goldPercent) : null);
         const movement = await this.prisma.stockMovement.create({
             data: {
                 code: await this.nextCode(this.prisma, 'OUT'),
@@ -285,8 +287,8 @@ let StockService = class StockService {
                 partnerId: dto.partnerId,
                 cabinetId: dto.cabinetId ?? null,
                 transformType: dto.transformType ?? null,
-                goldPercent: goldPercent ? D(goldPercent) : null,
-                expectedReturnG: goldPercent ? D((0, domain_1.expectedReturnWeight)(totalGoldG, goldPercent)) : null,
+                goldPercent: effectiveGoldPercent ? D(effectiveGoldPercent) : null,
+                expectedReturnG: effectiveGoldPercent ? D((0, domain_1.expectedReturnWeight)(totalGoldG, effectiveGoldPercent)) : null,
                 totalQuantity,
                 totalGoldG: D(totalGoldG),
                 totalCost: D(totalCost),
@@ -352,7 +354,9 @@ let StockService = class StockService {
         const next = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
         this.approval.assertTransition(movement.status, next);
         const day = await this.businessDay.current();
-        const isFactory = movement.scope === 'OLD' && movement.partner.code === 'FACTORY';
+        const isFactory = movement.scope === 'OLD' &&
+            (movement.partner.type === 'FACTORY' ||
+                (!movement.partner.type && movement.partner.code === 'FACTORY'));
         return this.prisma.$transaction(async (tx) => {
             if (dto.decision === 'APPROVED') {
                 if (isFactory) {
@@ -438,11 +442,14 @@ let StockService = class StockService {
             }
         }
         if (movement.partnerId) {
+            const aparWeight = movement.expectedReturnG
+                ? toDec(movement.expectedReturnG)
+                : totalGoldG;
             await this.apar.postGold(tx, {
                 scope: movement.scope,
                 type: 'OUT',
                 partnerId: movement.partnerId,
-                weightG: totalGoldG,
+                weightG: aparWeight,
                 cost: totalCost,
                 movementId: movement.id,
                 refType: 'STOCK_OUT',
@@ -1112,84 +1119,130 @@ let StockService = class StockService {
         const day = await this.businessDay.current();
         await this.ensureSkuBalancesForDay(day.id);
         return this.prisma.stockNewSkuBalance.findMany({
-            where: { businessDayId: day.id },
+            where: {
+                businessDayId: day.id,
+                goldSku: { deletedAt: null, isActive: true },
+            },
             include: { goldSku: { include: { goldItem: true } } },
             orderBy: { goldSku: { fullSkuName: 'asc' } },
         });
     }
     async ensureSkuBalancesForDay(businessDayId) {
-        const count = await this.prisma.stockNewSkuBalance.count({
-            where: { businessDayId },
+        const activeSkus = await this.prisma.goldSku.findMany({
+            where: { deletedAt: null, isActive: true },
         });
-        if (count > 0)
+        if (activeSkus.length === 0)
+            return;
+        const existingBalances = await this.prisma.stockNewSkuBalance.findMany({
+            where: { businessDayId },
+            select: { goldSkuId: true },
+        });
+        const existingSkuIds = new Set(existingBalances.map((b) => b.goldSkuId));
+        const missingSkus = activeSkus.filter((s) => !existingSkuIds.has(s.id));
+        if (missingSkus.length === 0)
             return;
         const latestPrev = await this.prisma.stockNewSkuBalance.findFirst({
             where: { businessDayId: { not: businessDayId } },
             orderBy: { businessDay: { date: 'desc' } },
             select: { businessDayId: true },
         });
-        if (!latestPrev)
-            return;
-        const prevBalances = await this.prisma.stockNewSkuBalance.findMany({
-            where: { businessDayId: latestPrev.businessDayId },
-        });
-        for (const b of prevBalances) {
+        const prevBalancesMap = new Map();
+        if (latestPrev) {
+            const prevBalances = await this.prisma.stockNewSkuBalance.findMany({
+                where: {
+                    businessDayId: latestPrev.businessDayId,
+                    goldSkuId: { in: missingSkus.map((s) => s.id) },
+                },
+            });
+            for (const b of prevBalances) {
+                prevBalancesMap.set(b.goldSkuId, {
+                    balanceQty: b.balanceQty,
+                    totalWeightG: b.totalWeightG,
+                });
+            }
+        }
+        for (const sku of missingSkus) {
+            const prev = prevBalancesMap.get(sku.id);
+            const openingQty = prev?.balanceQty ?? 0;
+            const totalWeightG = prev?.totalWeightG ??
+                new client_1.Prisma.Decimal((0, domain_1.dec)(sku.weightG.toFixed()).mul(openingQty).toFixed());
             await this.prisma.stockNewSkuBalance.upsert({
                 where: {
                     businessDayId_goldSkuId: {
                         businessDayId,
-                        goldSkuId: b.goldSkuId,
+                        goldSkuId: sku.id,
                     },
                 },
                 update: {},
                 create: {
                     businessDayId,
-                    goldSkuId: b.goldSkuId,
-                    openingQty: b.balanceQty,
+                    goldSkuId: sku.id,
+                    openingQty,
                     inQty: 0,
                     outQty: 0,
-                    balanceQty: b.balanceQty,
-                    totalWeightG: b.totalWeightG,
+                    balanceQty: openingQty,
+                    totalWeightG,
                 },
             });
         }
     }
     async ensureOldTypeBalancesForDay(businessDayId) {
-        const count = await this.prisma.stockOldTypeBalance.count({
-            where: { businessDayId },
+        const activeTypes = await this.prisma.goldType.findMany({
+            where: { deletedAt: null, isActive: true },
         });
-        if (count > 0)
+        if (activeTypes.length === 0)
+            return;
+        const existingBalances = await this.prisma.stockOldTypeBalance.findMany({
+            where: { businessDayId },
+            select: { goldTypeId: true },
+        });
+        const existingTypeIds = new Set(existingBalances.map((b) => b.goldTypeId));
+        const missingTypes = activeTypes.filter((t) => !existingTypeIds.has(t.id));
+        if (missingTypes.length === 0)
             return;
         const latestPrev = await this.prisma.stockOldTypeBalance.findFirst({
             where: { businessDayId: { not: businessDayId } },
             orderBy: { businessDay: { date: 'desc' } },
             select: { businessDayId: true },
         });
-        if (!latestPrev)
-            return;
-        const prevBalances = await this.prisma.stockOldTypeBalance.findMany({
-            where: { businessDayId: latestPrev.businessDayId },
-        });
-        for (const b of prevBalances) {
+        const prevBalancesMap = new Map();
+        if (latestPrev) {
+            const prevBalances = await this.prisma.stockOldTypeBalance.findMany({
+                where: {
+                    businessDayId: latestPrev.businessDayId,
+                    goldTypeId: { in: missingTypes.map((t) => t.id) },
+                },
+            });
+            for (const b of prevBalances) {
+                prevBalancesMap.set(b.goldTypeId, {
+                    closingWeightG: b.closingWeightG,
+                    closingCost: b.closingCost,
+                });
+            }
+        }
+        for (const type of missingTypes) {
+            const prev = prevBalancesMap.get(type.id);
+            const openingWeightG = prev?.closingWeightG ?? new client_1.Prisma.Decimal(0);
+            const openingCost = prev?.closingCost ?? new client_1.Prisma.Decimal(0);
             await this.prisma.stockOldTypeBalance.upsert({
                 where: {
                     businessDayId_goldTypeId: {
                         businessDayId,
-                        goldTypeId: b.goldTypeId,
+                        goldTypeId: type.id,
                     },
                 },
                 update: {},
                 create: {
                     businessDayId,
-                    goldTypeId: b.goldTypeId,
-                    openingWeightG: b.closingWeightG,
-                    openingCost: b.closingCost,
+                    goldTypeId: type.id,
+                    openingWeightG,
+                    openingCost,
                     inG: new client_1.Prisma.Decimal(0),
                     outG: new client_1.Prisma.Decimal(0),
                     priceIn: new client_1.Prisma.Decimal(0),
                     priceOut: new client_1.Prisma.Decimal(0),
-                    closingWeightG: b.closingWeightG,
-                    closingCost: b.closingCost,
+                    closingWeightG: openingWeightG,
+                    closingCost: openingCost,
                 },
             });
         }
@@ -1600,13 +1653,18 @@ let StockService = class StockService {
                     ? toDec(movement.goldPercent)
                     : null;
             const nextTransformType = dto.transformType !== undefined ? dto.transformType : movement.transformType;
+            const activePartner = partner ?? movement.partner;
+            const isFactory = movement.scope === 'OLD' &&
+                (activePartner?.type === 'FACTORY' ||
+                    (!activePartner?.type && activePartner?.code === 'FACTORY'));
+            const effectiveGoldPercent = isFactory ? null : nextGoldPercent;
             const updated = await tx.stockMovement.update({
                 where: { id },
                 data: {
                     partnerId: partner?.id ?? movement.partnerId,
                     transformType: nextTransformType,
-                    goldPercent: nextGoldPercent ? D(nextGoldPercent) : null,
-                    expectedReturnG: nextGoldPercent ? D((0, domain_1.expectedReturnWeight)(totalGoldG, nextGoldPercent)) : null,
+                    goldPercent: effectiveGoldPercent ? D(effectiveGoldPercent) : null,
+                    expectedReturnG: effectiveGoldPercent ? D((0, domain_1.expectedReturnWeight)(totalGoldG, effectiveGoldPercent)) : null,
                     totalGoldG: D(totalGoldG),
                     totalQuantity,
                     totalCost: D(totalCost),
@@ -1755,12 +1813,18 @@ let StockService = class StockService {
             if (aparRow) {
                 const pId = partner?.id ?? movement.partnerId;
                 if (pId) {
+                    const effectiveExpectedReturnG = nextGoldPercent
+                        ? (0, domain_1.expectedReturnWeight)(totalGoldG, nextGoldPercent)
+                        : movement.expectedReturnG
+                            ? toDec(movement.expectedReturnG)
+                            : null;
+                    const aparWeight = effectiveExpectedReturnG ?? totalGoldG;
                     await tx.goldApArLedger.update({
                         where: { id: aparRow.id },
                         data: {
                             partnerId: pId,
                             goldInG: movement.type === 'IN' ? D(totalGoldG) : D((0, domain_1.dec)(0)),
-                            goldOutG: movement.type !== 'IN' ? D(totalGoldG) : D((0, domain_1.dec)(0)),
+                            goldOutG: movement.type !== 'IN' ? D(aparWeight) : D((0, domain_1.dec)(0)),
                             priceIn: movement.type === 'IN' ? D(totalCost) : D((0, domain_1.dec)(0)),
                             priceOut: movement.type !== 'IN' ? D(totalCost) : D((0, domain_1.dec)(0)),
                         },
@@ -1912,12 +1976,15 @@ let StockService = class StockService {
                 await this.recomputeOldLedgerRunningTotals(tx);
             }
             // 5. Soft-delete GoldApArLedger row
+            const aparRow = await tx.goldApArLedger.findFirst({
+                where: { movementId: id, deletedAt: null },
+            });
             await tx.goldApArLedger.updateMany({
                 where: { movementId: id, deletedAt: null },
                 data: { deletedAt: now },
             });
             if (movement.partnerId) {
-                await this.recomputeGoldApArRunningTotals(tx, movement.partnerId, 'AP');
+                await this.recomputeGoldApArRunningTotals(tx, movement.partnerId, aparRow?.side ?? 'AP');
             }
             // 6. Soft-delete CashApArLedger row
             await tx.cashApArLedger.updateMany({

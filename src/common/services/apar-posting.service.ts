@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, type ApArRefType, type ApArSide, type Currency } from '@prisma/client';
+import { Prisma, type ApArRefType, type ApArSide, type Currency, type PaymentMethod } from '@prisma/client';
 import {
   buildCashPosting,
   buildGoldPosting,
@@ -41,6 +41,8 @@ export interface CashPostingInput {
   categoryId?: string;
   note?: string;
   createdById: string;
+  method?: PaymentMethod | null;
+  bankAccountId?: string | null;
 }
 
 export interface GoldPostingInput {
@@ -126,6 +128,8 @@ export class ApArPostingService {
         sequence: (lastToday?.sequence ?? 0) + 1,
         note: input.note ?? null,
         createdById: input.createdById,
+        method: input.method ?? null,
+        bankAccountId: input.bankAccountId ?? null,
       },
     });
   }

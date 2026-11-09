@@ -17,6 +17,7 @@ const domain_1 = require("@kpv/domain");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const audit_service_1 = require("../../common/services/audit.service");
 const code_generator_service_1 = require("../../common/services/code-generator.service");
+const business_day_service_1 = require("../../common/services/business-day.service");
 /**
  * TOR §3.6 — ລະບົບຈັດການ SKU ນ້ຳໜັກຂອງຄຳ.
  *
@@ -142,6 +143,28 @@ let SkusService = SkusService_1 = class SkusService {
                 },
                 include: { goldItem: true },
             });
+        const today = business_day_service_1.BusinessDayService.toDateOnly();
+        const currentDay = await this.prisma.businessDay.findUnique({ where: { date: today } });
+        if (currentDay) {
+            await this.prisma.stockNewSkuBalance.upsert({
+                where: {
+                    businessDayId_goldSkuId: {
+                        businessDayId: currentDay.id,
+                        goldSkuId: created.id,
+                    },
+                },
+                update: {},
+                create: {
+                    businessDayId: currentDay.id,
+                    goldSkuId: created.id,
+                    openingQty: 0,
+                    inQty: 0,
+                    outQty: 0,
+                    balanceQty: 0,
+                    totalWeightG: new client_1.Prisma.Decimal(0),
+                },
+            });
+        }
         await this.audit.record({
             actorId,
             action: 'CREATE',

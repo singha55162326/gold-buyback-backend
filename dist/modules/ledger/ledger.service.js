@@ -283,10 +283,13 @@ let LedgerService = class LedgerService {
      * ແຕ່ຍອດເງິນສົດ/ທະນາຄານ ຍັງເປັນຍອດຍົກມາ ບໍ່ແມ່ນ 0.
      */
     async coh(asOfDate) {
-        const day = asOfDate
-            ? await this.prisma.businessDay.findUnique({ where: { date: new Date(`${asOfDate}T00:00:00.000Z`) } })
+        const cleanDate = typeof asOfDate === 'string' && asOfDate.trim() !== '' ? asOfDate.trim() : undefined;
+        const day = cleanDate
+            ? await this.prisma.businessDay.findUnique({ where: { date: new Date(`${cleanDate}T00:00:00.000Z`) } })
             : await this.businessDay.current();
-        const asOf = asOfDate ? new Date(`${asOfDate}T00:00:00.000Z`) : undefined;
+        const asOf = cleanDate
+            ? new Date(`${cleanDate}T00:00:00.000Z`)
+            : (day?.date ?? business_day_service_1.BusinessDayService.toDateOnly());
         const [cashBalances, bankBalances, apAr, goldSummary, wacPosition, advanceNet] = await Promise.all([
             this.cash.cashBalances(asOf),
             this.cash.bankBalances(asOf),
@@ -297,9 +300,34 @@ let LedgerService = class LedgerService {
             this.advance.netByCurrency(this.prisma, asOf),
         ]);
         const cashByCurrency = new Map(cashBalances.map((b) => [b.currency, (0, domain_1.dec)(b.balance)]));
+        const bankAccounts = Array.from(new Map(bankBalances.map((b) => [
+            b.bankAccountId,
+            { id: b.bankAccountId, code: b.bankCode, nameLo: b.bankNameLo },
+        ])).values());
         const bankByCurrency = (code, currency) => {
             const row = bankBalances.find((b) => b.bankCode === code && b.currency === currency);
             return (0, domain_1.dec)(row?.actual ?? 0);
+        };
+        const otherBanksByCurrency = (currency) => {
+            return bankBalances
+                .filter((b) => b.bankCode !== 'BCEL' && b.bankCode !== 'LDB' && b.currency === currency)
+                .reduce((sum, b) => sum.plus((0, domain_1.dec)(b.actual ?? 0)), (0, domain_1.dec)(0));
+        };
+        const bankTotalForCurrency = (currency) => {
+            return bankBalances
+                .filter((b) => b.currency === currency)
+                .reduce((sum, b) => sum.plus((0, domain_1.dec)(b.actual ?? 0)), (0, domain_1.dec)(0));
+        };
+        const banksForCurrency = (currency) => {
+            return bankAccounts.map((acc) => {
+                const row = bankBalances.find((b) => b.bankAccountId === acc.id && b.currency === currency);
+                return {
+                    bankAccountId: acc.id,
+                    bankCode: acc.code,
+                    bankNameLo: acc.nameLo,
+                    amount: (0, domain_1.dec)(row?.actual ?? 0).toFixed(),
+                };
+            });
         };
         const apArFor = (side, currency) => {
             const row = apAr.find((r) => r.side === side && r.currency === currency);
@@ -308,7 +336,9 @@ let LedgerService = class LedgerService {
         const cash = CURRENCIES.map((currency) => {
             const bcel = bankByCurrency('BCEL', currency);
             const ldb = bankByCurrency('LDB', currency);
-            const other = bankByCurrency('OTHER_BANK', currency);
+            const other = otherBanksByCurrency(currency);
+            const bankTotal = bankTotalForCurrency(currency);
+            const banks = banksForCurrency(currency);
             const ap = apArFor('AP', currency);
             const ar = apArFor('AR', currency);
             const advance = advanceNet[currency] ?? (0, domain_1.dec)(0);
@@ -319,6 +349,8 @@ let LedgerService = class LedgerService {
                 bcel: bcel.toFixed(),
                 ldb: ldb.toFixed(),
                 otherBank: other.toFixed(),
+                bankTotal: bankTotal.toFixed(),
+                banks,
                 ap: ap.toFixed(),
                 ar: ar.toFixed(),
                 advance: advance.toFixed(),
@@ -352,6 +384,7 @@ let LedgerService = class LedgerService {
                 cohG: gold.weightG.toFixed(),
                 cohBaht: gold.baht.toFixed(),
             },
+            bankAccounts,
         };
     }
     /* ---------------------------------------------------------------- *

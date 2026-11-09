@@ -19,6 +19,7 @@ const history_range_service_1 = require("../../common/services/history-range.ser
 const approval_service_1 = require("../../common/services/approval.service");
 const business_day_service_1 = require("../../common/services/business-day.service");
 const stock_ledger_service_1 = require("../../common/services/stock-ledger.service");
+const cash_service_1 = require("../cash/cash.service");
 const notifications_service_1 = require("../notifications/notifications.service");
 const pricing_context_service_1 = require("../pricing/pricing-context.service");
 /** Maps a ປະເພດຄຳ row to the pricing branch it takes in §5.1. */
@@ -50,8 +51,9 @@ let BuybackService = class BuybackService {
     notifications;
     pricingContext;
     stockLedger;
+    cash;
     range;
-    constructor(prisma, audit, approval, businessDay, notifications, pricingContext, stockLedger, range) {
+    constructor(prisma, audit, approval, businessDay, notifications, pricingContext, stockLedger, cash, range) {
         this.prisma = prisma;
         this.audit = audit;
         this.approval = approval;
@@ -59,6 +61,7 @@ let BuybackService = class BuybackService {
         this.notifications = notifications;
         this.pricingContext = pricingContext;
         this.stockLedger = stockLedger;
+        this.cash = cash;
         this.range = range;
     }
     kindFor(code) {
@@ -279,11 +282,15 @@ let BuybackService = class BuybackService {
     async review(id, dto, user) {
         const buyback = await this.prisma.buyback.findFirst({
             where: { id, deletedAt: null },
+            include: { payments: true },
         });
         if (!buyback)
             throw new common_1.NotFoundException('ບໍ່ພົບລາຍການ Buyback');
         const next = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
         this.approval.assertTransition(buyback.status, next);
+        if (dto.decision === 'APPROVED') {
+            await this.cash.assertSufficientFunds(buyback.payments, `ການຈ່າຍ Buyback ${buyback.code}`);
+        }
         return this.prisma.$transaction(async (tx) => {
             const updated = await tx.buyback.update({
                 where: { id },
@@ -337,6 +344,7 @@ let BuybackService = class BuybackService {
             throw new common_1.ConflictException('ມີພຽງຜູ້ສ້າງລາຍການເທົ່ານັ້ນທີ່ຢືນຢັນໄດ້');
         }
         this.approval.assertTransition(buyback.status, 'COMPLETED');
+        await this.cash.assertSufficientFunds(buyback.payments, `ການຈ່າຍ Buyback ${buyback.code}`);
         const day = await this.businessDay.current();
         return this.prisma.$transaction(async (tx) => {
             // 1. Money leaves the shop, split across the recorded payment legs.
@@ -531,6 +539,7 @@ exports.BuybackService = BuybackService = __decorate([
         notifications_service_1.NotificationsService,
         pricing_context_service_1.PricingContextService,
         stock_ledger_service_1.StockLedgerService,
+        cash_service_1.CashService,
         history_range_service_1.HistoryRangeService])
 ], BuybackService);
 //# sourceMappingURL=buyback.service.js.map

@@ -18,6 +18,7 @@ const audit_service_1 = require("../../common/services/audit.service");
 const history_range_service_1 = require("../../common/services/history-range.service");
 const business_day_service_1 = require("../../common/services/business-day.service");
 const advance_service_1 = require("../../common/services/advance.service");
+const cash_service_1 = require("../cash/cash.service");
 const pricing_context_service_1 = require("../pricing/pricing-context.service");
 const D = (value) => new client_1.Prisma.Decimal(value.toFixed());
 /**
@@ -62,13 +63,15 @@ let OrdersService = class OrdersService {
     audit;
     businessDay;
     advance;
+    cash;
     pricingContext;
     range;
-    constructor(prisma, audit, businessDay, advance, pricingContext, range) {
+    constructor(prisma, audit, businessDay, advance, cash, pricingContext, range) {
         this.prisma = prisma;
         this.audit = audit;
         this.businessDay = businessDay;
         this.advance = advance;
+        this.cash = cash;
         this.pricingContext = pricingContext;
         this.range = range;
     }
@@ -290,7 +293,25 @@ let OrdersService = class OrdersService {
         if (dto.status === 'COMPLETED' && (0, domain_1.dec)(order.balanceAmount.toFixed()).gt(0)) {
             throw new common_1.BadRequestException(`ຍັງມີຍອດຄົງເຫຼືອ ${order.balanceAmount.toFixed(0)} LAK — ຕ້ອງຊຳຣະໃຫ້ຄົບກ່ອນ`);
         }
+        const refundLines = dto.status === 'COMPLETED'
+            ? (dto.refundReceipts ?? []).filter((l) => (0, domain_1.dec)(l.amount).gt(0))
+            : [];
+        if (refundLines.some((l) => l.method === 'BANK' && !l.bankAccountId)) {
+            throw new common_1.BadRequestException('ການຈ່າຍແບບໂອນ ຕ້ອງເລືອກທະນາຄານ');
+        }
+        const [day, context] = refundLines.length > 0
+            ? await Promise.all([this.businessDay.current(), this.pricingContext.load()])
+            : [null, null];
+        if (refundLines.length > 0) {
+            await this.assertRefundableAndFunds(order.id, order.code, refundLines);
+        }
         return this.prisma.$transaction(async (tx) => {
+            if (refundLines.length > 0 && day && context) {
+                await this.recordRefundLegs(tx, order, refundLines, day.id, context.rates, user.id);
+            }
+            if (dto.status === 'CANCELLED') {
+                await this.advance.settleOrderAdvance(tx, order, user.id, `ຍົກເລີກ Order ${order.code} — ລົບລ້າງພັນທະມັດຈໍາ`);
+            }
             const updated = await tx.order.update({
                 where: { id },
                 data: {
@@ -316,15 +337,24 @@ let OrdersService = class OrdersService {
                         },
                     },
                 },
+                include: {
+                    customer: true,
+                    goldItem: true,
+                    supplier: true,
+                    receipts: { include: { bankAccount: true } },
+                    lines: { include: { goldItem: true }, orderBy: { sortOrder: 'asc' } },
+                },
             });
             await this.audit.record({
                 actorId: user.id,
-                action: 'UPDATE',
+                action: dto.status === 'COMPLETED' ? 'COMPLETE' : 'UPDATE',
                 entity: 'Order',
                 entityId: id,
                 before: { status: order.status },
-                after: { status: dto.status },
-                summary: `Order ${order.code}: ${STATUS_LABEL_LO[dto.status]}`,
+                after: { status: dto.status, ...(refundLines.length > 0 ? { refundedLegs: refundLines.length } : {}) },
+                summary: refundLines.length > 0
+                    ? `Order ${order.code}: ${STATUS_LABEL_LO[dto.status]} ແລະ ຈ່າຍເງິນຄືນ`
+                    : `Order ${order.code}: ${STATUS_LABEL_LO[dto.status]}`,
             }, tx);
             return updated;
         });
@@ -391,15 +421,8 @@ let OrdersService = class OrdersService {
                 });
             }
             if (settled) {
-                // ★ Step 2: obligation discharged — release the whole advance.
-                await this.advance.post(tx, {
-                    orderId: order.id,
-                    currency: 'LAK',
-                    amount: total,
-                    direction: 'OUT',
-                    note: `ຢືນຢັນລູກຄ້າຮັບເຄື່ອງ ${order.code} — ລົບລ້າງພັນທະມັດຈໍາ`,
-                    createdById: user.id,
-                });
+                // ★ Step 2: obligation discharged — release the whole advance per currency.
+                await this.advance.settleOrderAdvance(tx, order, user.id, `ຢືນຢັນລູກຄ້າຮັບເຄື່ອງ ${order.code} — ລົບລ້າງພັນທະມັດຈໍາ`);
             }
             const updated = await tx.order.update({
                 where: { id },
@@ -439,10 +462,44 @@ let OrdersService = class OrdersService {
     }
     async list(status, query, user) {
         const range = this.range.resolve(query, user);
+        /*
+         * Order ທີ່ຍັງບໍ່ທັນປິດ (ຍັງສັ່ງຊ່າງ / ລໍຖ້າຮັບເຄື່ອງ ຫຼື ຍັງມີຍອດເງິນມັດຈຳຄ້າງຄືນ)
+         * ຕ້ອງປາກົດຢູ່ໜ້າຈໍຈົນກວ່າຈະສຳເລັດຄົບຖ້ວນ ເຊັ່ນດຽວກັບ Module ຝາກສິນຄ້າ,
+         * ເພື່ອບໍ່ໃຫ້ບິນຄ້າງຂ້າມມື້ຫາຍໄປຈາກໜ້າຈໍເມື່ອຂຶ້ນມື້ໃໝ່.
+         */
+        const advGroups = await this.prisma.advanceLedger.groupBy({
+            by: ['orderId'],
+            where: { deletedAt: null },
+            _sum: { amountIn: true, amountOut: true },
+        });
+        const unsettledOrderIds = advGroups
+            .filter((g) => (0, domain_1.dec)(g._sum.amountIn?.toFixed() ?? 0).gt((0, domain_1.dec)(g._sum.amountOut?.toFixed() ?? 0)))
+            .map((g) => g.orderId);
+        const inRange = { createdAt: history_range_service_1.HistoryRangeService.window(range) };
+        const stillOpen = {
+            status: { not: 'CANCELLED' },
+            OR: [
+                { status: { not: 'COMPLETED' } },
+                ...(unsettledOrderIds.length > 0 ? [{ id: { in: unsettledOrderIds } }] : []),
+            ],
+        };
         const where = {
             deletedAt: null,
-            createdAt: history_range_service_1.HistoryRangeService.window(range),
-            ...(status ? { status } : {}),
+            ...(status
+                ? {
+                    status,
+                    ...(status === 'CANCELLED'
+                        ? inRange
+                        : status === 'COMPLETED'
+                            ? {
+                                OR: [
+                                    inRange,
+                                    ...(unsettledOrderIds.length > 0 ? [{ id: { in: unsettledOrderIds } }] : []),
+                                ],
+                            }
+                            : {}),
+                }
+                : { OR: [inRange, stillOpen] }),
         };
         const [rows, total] = await this.prisma.$transaction([
             this.prisma.order.findMany({
@@ -454,7 +511,6 @@ let OrdersService = class OrdersService {
                     receipts: { include: { bankAccount: true } },
                     // ລາຍການໃນບິນ — ປຸ່ມ View ຕ້ອງເຫັນຄົບທຸກແຖວ.
                     lines: { include: { goldItem: true }, orderBy: { sortOrder: 'asc' } },
-                    statusHistory: true,
                 },
                 orderBy: { createdAt: 'desc' },
                 skip: range.skip,
@@ -483,45 +539,13 @@ let OrdersService = class OrdersService {
         if (bankLegs.some((l) => !l.bankAccountId)) {
             throw new common_1.BadRequestException('ການຈ່າຍແບບໂອນ ຕ້ອງເລືອກທະນາຄານ');
         }
-        const day = await this.businessDay.current();
+        const [day, context] = await Promise.all([
+            this.businessDay.current(),
+            this.pricingContext.load(),
+        ]);
+        await this.assertRefundableAndFunds(order.id, order.code, lines);
         return this.prisma.$transaction(async (tx) => {
-            for (const line of lines) {
-                const amount = new client_1.Prisma.Decimal((0, domain_1.dec)(line.amount).toFixed());
-                await this.recordReceiptMoney(tx, {
-                    method: line.method,
-                    bankAccountId: line.bankAccountId ?? null,
-                    currency: line.currency,
-                    amount,
-                    businessDayId: day.id,
-                    refId: order.id,
-                    note: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
-                    createdById: user.id,
-                    direction: 'out',
-                });
-                await tx.orderReceipt.create({
-                    data: {
-                        orderId: order.id,
-                        method: line.method,
-                        bankAccountId: line.bankAccountId ?? null,
-                        currency: line.currency,
-                        rate: new client_1.Prisma.Decimal(1),
-                        amount,
-                        amountLak: amount,
-                        isRefund: true,
-                        createdById: user.id,
-                    },
-                });
-                await this.advance.post(tx, {
-                    orderId: order.id,
-                    currency: line.currency,
-                    amount: (0, domain_1.dec)(line.amount),
-                    direction: 'OUT',
-                    method: line.method,
-                    bankAccountId: line.bankAccountId ?? null,
-                    note: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
-                    createdById: user.id,
-                });
-            }
+            await this.recordRefundLegs(tx, order, lines, day.id, context.rates, user.id);
             await this.audit.record({
                 actorId: user.id,
                 action: 'UPDATE',
@@ -531,9 +555,85 @@ let OrdersService = class OrdersService {
             }, tx);
             return tx.order.findUniqueOrThrow({
                 where: { id: order.id },
-                include: { receipts: true },
+                include: { receipts: { include: { bankAccount: true } } },
             });
         });
+    }
+    /**
+     * ກວດສອບວ່າ:
+     * 1. ຍອດທີ່ຈະຈ່າຍຄືນ ບໍ່ເກີນຍອດເງິນມັດຈຳສຸດທິທີ່ຮັບມາໃນ Order ນີ້
+     * 2. ເງິນສົດໃນຮ້ານ (Module Cash) ແລະ ບັນຊີທະນາຄານ (Module Bank) ມີພໍຈ່າຍຄືນ (ບໍ່ຕິດລົບ)
+     */
+    async assertRefundableAndFunds(orderId, orderCode, lines) {
+        const receipts = await this.prisma.orderReceipt.findMany({
+            where: { orderId },
+            select: { currency: true, amount: true, isRefund: true },
+        });
+        const netByCur = new Map();
+        for (const r of receipts) {
+            const prev = netByCur.get(r.currency) ?? (0, domain_1.dec)(0);
+            const amt = (0, domain_1.dec)(r.amount.toFixed());
+            netByCur.set(r.currency, r.isRefund ? prev.minus(amt) : prev.plus(amt));
+        }
+        const reqByCur = new Map();
+        for (const l of lines) {
+            const prev = reqByCur.get(l.currency) ?? (0, domain_1.dec)(0);
+            reqByCur.set(l.currency, prev.plus((0, domain_1.dec)(l.amount)));
+        }
+        for (const [currency, reqAmt] of reqByCur) {
+            const availableAdvance = netByCur.get(currency) ?? (0, domain_1.dec)(0);
+            if (reqAmt.gt(availableAdvance)) {
+                throw new common_1.BadRequestException(`ຍອດຈ່າຍເງິນຄືນ ${reqAmt.toFixed()} ${currency} ເກີນຍອດມັດຈຳຄົງເຫຼືອຂອງ Order ${orderCode} (ມີ ${availableAdvance.toFixed()} ${currency})`);
+            }
+        }
+        await this.cash.assertSufficientFunds(lines, `ການຈ່າຍເງິນຄືນ Order ${orderCode}`);
+    }
+    async recordRefundLegs(tx, order, lines, businessDayId, rates, userId) {
+        for (const line of lines) {
+            const amountDec = (0, domain_1.dec)(line.amount);
+            const amount = D(amountDec);
+            const orderRate = order.exchangeRate ? (0, domain_1.dec)(order.exchangeRate.toFixed()) : (0, domain_1.dec)(0);
+            const rateDec = line.currency === 'LAK'
+                ? (0, domain_1.dec)(1)
+                : line.currency === order.currency && orderRate.gt(0)
+                    ? orderRate
+                    : pricing_context_service_1.PricingContextService.rateFor(rates, line.currency, 'buyback');
+            const amountLak = D(amountDec.mul(rateDec));
+            await this.recordReceiptMoney(tx, {
+                method: line.method,
+                bankAccountId: line.bankAccountId ?? null,
+                currency: line.currency,
+                amount,
+                businessDayId,
+                refId: order.id,
+                note: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
+                createdById: userId,
+                direction: 'out',
+            });
+            await tx.orderReceipt.create({
+                data: {
+                    orderId: order.id,
+                    method: line.method,
+                    bankAccountId: line.bankAccountId ?? null,
+                    currency: line.currency,
+                    rate: D(rateDec),
+                    amount,
+                    amountLak,
+                    isRefund: true,
+                    createdById: userId,
+                },
+            });
+            await this.advance.post(tx, {
+                orderId: order.id,
+                currency: line.currency,
+                amount: amountDec,
+                direction: 'OUT',
+                method: line.method,
+                bankAccountId: line.bankAccountId ?? null,
+                note: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
+                createdById: userId,
+            });
+        }
     }
     async recordReceiptMoney(tx, input) {
         const out = input.direction === 'out';
@@ -576,10 +676,11 @@ let OrdersService = class OrdersService {
     async update(id, dto, user) {
         const order = await this.prisma.order.findFirst({
             where: { id, deletedAt: null },
-            include: { lines: true, customer: true },
+            include: { lines: true, customer: true, receipts: true },
         });
         if (!order)
             throw new common_1.NotFoundException('ບໍ່ພົບ Order');
+        const context = await this.pricingContext.load();
         return this.prisma.$transaction(async (tx) => {
             let customerId = order.customerId;
             if (dto.phone && dto.phone !== order.customer.phone) {
@@ -619,20 +720,105 @@ let OrdersService = class OrdersService {
                     throw new common_1.BadRequestException('ຍອດລວມຕ້ອງໃຫຍ່ກວ່າ 0');
                 newTotalAmount = D(totalDec);
             }
+            let currency = dto.currency ?? order.currency ?? 'LAK';
+            let originalTotalAmount = dto.originalTotalAmount
+                ? (0, domain_1.dec)(dto.originalTotalAmount)
+                : order.originalTotalAmount
+                    ? (0, domain_1.dec)(order.originalTotalAmount.toFixed())
+                    : null;
+            let exchangeRate = dto.exchangeRate
+                ? (0, domain_1.dec)(dto.exchangeRate)
+                : order.exchangeRate
+                    ? (0, domain_1.dec)(order.exchangeRate.toFixed())
+                    : null;
+            const noteToCheck = dto.note !== undefined ? dto.note : order.note;
+            if (!dto.currency && noteToCheck) {
+                const match = noteToCheck.match(/\[TOTAL:\s*([\d,.]+)\s*(THB|USD|LAK)\]/);
+                if (match) {
+                    currency = match[2];
+                    originalTotalAmount = (0, domain_1.dec)(match[1].replace(/,/g, ''));
+                }
+            }
+            if (!originalTotalAmount || currency === 'LAK') {
+                originalTotalAmount = (0, domain_1.dec)(newTotalAmount.toFixed());
+            }
+            if (!exchangeRate || currency === 'LAK') {
+                exchangeRate =
+                    currency !== 'LAK'
+                        ? pricing_context_service_1.PricingContextService.rateFor(context.rates, currency, 'sell')
+                        : (0, domain_1.dec)(1);
+            }
             if (dto.receipts !== undefined) {
-                const context = await this.pricingContext.load();
                 const totalDec = (0, domain_1.dec)(newTotalAmount.toFixed());
                 const receipt = this.resolveReceipts(dto.receipts, context.rates, totalDec);
-                const day = await this.businessDay.current();
+                // ກວດສອບວ່າການແກ້ໄຂຍອດຮັບ ຈະບໍ່ເຮັດໃຫ້ຍອດ Cash ຫຼື Bank ໃນຮ້ານຕິດລົບ
+                const oldDeposits = order.receipts.filter((r) => !r.isRefund);
+                const deltaMap = new Map();
+                for (const old of oldDeposits) {
+                    const key = `${old.method}:${old.bankAccountId ?? ''}:${old.currency}`;
+                    const prev = deltaMap.get(key);
+                    const amt = (0, domain_1.dec)(old.amount.toFixed());
+                    if (!prev) {
+                        deltaMap.set(key, {
+                            method: old.method,
+                            bankAccountId: old.bankAccountId ?? null,
+                            currency: old.currency,
+                            diff: amt,
+                        });
+                    }
+                    else {
+                        prev.diff = prev.diff.plus(amt);
+                    }
+                }
+                for (const line of receipt.lines) {
+                    const key = `${line.method}:${line.bankAccountId ?? ''}:${line.currency}`;
+                    const prev = deltaMap.get(key);
+                    if (prev) {
+                        prev.diff = prev.diff.minus(line.amount);
+                    }
+                }
+                const reductions = Array.from(deltaMap.values())
+                    .filter((item) => item.diff.gt(0))
+                    .map((item) => ({
+                    method: item.method,
+                    bankAccountId: item.bankAccountId,
+                    currency: item.currency,
+                    amount: item.diff,
+                }));
+                if (reductions.length > 0) {
+                    await this.cash.assertSufficientFunds(reductions, `ການແກ້ໄຂຍອດຮັບ Order ${order.code} (ຍອດຄົງເຫຼືອຈະຕິດລົບ)`);
+                }
+                // Preserve original businessDayId and advance businessDate so editing an
+                // older order does not shift its cash/bank/advance movements into today.
+                const [existingCash, existingBank, existingAdvance] = await Promise.all([
+                    tx.cashTransaction.findFirst({
+                        where: { refType: 'Order', refId: id, deletedAt: null },
+                        orderBy: { createdAt: 'asc' },
+                    }),
+                    tx.bankTransaction.findFirst({
+                        where: { refType: 'Order', refId: id, deletedAt: null },
+                        orderBy: { createdAt: 'asc' },
+                    }),
+                    tx.advanceLedger.findFirst({
+                        where: { orderId: id, deletedAt: null },
+                        orderBy: [{ businessDate: 'asc' }, { sequence: 'asc' }],
+                    }),
+                ]);
+                const targetBusinessDayId = existingCash?.businessDayId ??
+                    existingBank?.businessDayId ??
+                    (await this.businessDay.current()).id;
+                const targetAdvanceDate = existingAdvance?.businessDate;
+                // Preserve any refund receipts that were already paid out on this order
+                const existingRefunds = order.receipts.filter((r) => r.isRefund);
                 newReceivedAmount = D(receipt.applied);
                 const remaining = totalDec.minus(receipt.applied);
                 newBalanceAmount = D(remaining.gt(0) ? remaining : (0, domain_1.dec)(0));
-                // Delete old receipts, cash/bank transactions, and advances for this order
+                // Replace old movements & receipts cleanly, then re-apply deposit + existing refunds
                 await tx.cashTransaction.deleteMany({ where: { refType: 'Order', refId: id } });
                 await tx.bankTransaction.deleteMany({ where: { refType: 'Order', refId: id } });
                 await tx.advanceLedger.deleteMany({ where: { orderId: id } });
-                await tx.orderReceipt.deleteMany({ where: { orderId: id } });
-                // Create new receipts
+                await tx.orderReceipt.deleteMany({ where: { orderId: id, isRefund: false } });
+                // Create updated deposit receipts
                 await tx.orderReceipt.createMany({
                     data: receipt.lines.map((line) => ({
                         orderId: id,
@@ -653,7 +839,7 @@ let OrdersService = class OrdersService {
                         bankAccountId: line.bankAccountId ?? null,
                         currency: line.currency,
                         amount: D(line.amount),
-                        businessDayId: day.id,
+                        businessDayId: targetBusinessDayId,
                         refId: order.id,
                         note: `ເງິນມັດຈໍາ Order ${order.code} (ແກ້ໄຂ)`,
                         createdById: user.id,
@@ -663,10 +849,36 @@ let OrdersService = class OrdersService {
                         currency: line.currency,
                         amount: line.amount,
                         direction: 'IN',
+                        businessDate: targetAdvanceDate,
                         method: line.method,
                         bankAccountId: line.bankAccountId ?? null,
                         note: `ເງິນມັດຈໍາ Order ${order.code} (ແກ້ໄຂ)`,
                         createdById: user.id,
+                    });
+                }
+                // Re-record any existing refund movements so refund history is not lost
+                for (const ref of existingRefunds) {
+                    await this.recordReceiptMoney(tx, {
+                        method: ref.method,
+                        bankAccountId: ref.bankAccountId ?? null,
+                        currency: ref.currency,
+                        amount: ref.amount,
+                        businessDayId: targetBusinessDayId,
+                        refId: order.id,
+                        note: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
+                        createdById: ref.createdById,
+                        direction: 'out',
+                    });
+                    await this.advance.post(tx, {
+                        orderId: order.id,
+                        currency: ref.currency,
+                        amount: (0, domain_1.dec)(ref.amount.toFixed()),
+                        direction: 'OUT',
+                        businessDate: targetAdvanceDate,
+                        method: ref.method,
+                        bankAccountId: ref.bankAccountId ?? null,
+                        note: `ຈ່າຍເງິນຄືນ Order ${order.code}`,
+                        createdById: ref.createdById,
                     });
                 }
                 if (receipt.lines.length === 0) {
@@ -676,16 +888,26 @@ let OrdersService = class OrdersService {
                         amount: (0, domain_1.dec)(0),
                         direction: 'IN',
                         allowZero: true,
+                        businessDate: targetAdvanceDate,
                         note: `ແກ້ໄຂ Order ${order.code} — ຍັງບໍ່ໄດ້ຮັບເງິນມັດຈຳ`,
                         createdById: user.id,
                     });
                 }
+                const effectiveStatus = dto.status ?? order.status;
+                if (effectiveStatus === 'CANCELLED') {
+                    await this.advance.settleOrderAdvance(tx, order, user.id, `ຍົກເລີກ Order ${order.code} — ລົບລ້າງພັນທະມັດຈໍາ`, targetAdvanceDate);
+                }
             }
-            else if (dto.totalAmount) {
-                const totalDec = (0, domain_1.dec)(dto.totalAmount);
-                const receivedDec = (0, domain_1.dec)(order.receivedAmount.toFixed());
-                const balDec = totalDec.minus(receivedDec);
-                newBalanceAmount = D(balDec.gt(0) ? balDec : (0, domain_1.dec)(0));
+            else {
+                if (dto.totalAmount) {
+                    const totalDec = (0, domain_1.dec)(dto.totalAmount);
+                    const receivedDec = (0, domain_1.dec)(order.receivedAmount.toFixed());
+                    const balDec = totalDec.minus(receivedDec);
+                    newBalanceAmount = D(balDec.gt(0) ? balDec : (0, domain_1.dec)(0));
+                }
+                if (dto.status && dto.status !== order.status && dto.status === 'CANCELLED') {
+                    await this.advance.settleOrderAdvance(tx, order, user.id, `ຍົກເລີກ Order ${order.code} — ລົບລ້າງພັນທະມັດຈໍາ`);
+                }
             }
             const updated = await tx.order.update({
                 where: { id },
@@ -697,6 +919,9 @@ let OrdersService = class OrdersService {
                     totalAmount: newTotalAmount,
                     receivedAmount: newReceivedAmount,
                     balanceAmount: newBalanceAmount,
+                    currency,
+                    originalTotalAmount: D(originalTotalAmount),
+                    exchangeRate: D(exchangeRate),
                     ...(dto.billNo ? { billNo: dto.billNo } : {}),
                     ...(dto.productType ? { productType: dto.productType } : {}),
                     ...(dto.staffName ? { staffName: dto.staffName.trim() } : {}),
@@ -723,9 +948,41 @@ let OrdersService = class OrdersService {
         });
     }
     async remove(id, user) {
-        const order = await this.prisma.order.findFirst({ where: { id, deletedAt: null } });
+        const order = await this.prisma.order.findFirst({
+            where: { id, deletedAt: null },
+            include: { receipts: true },
+        });
         if (!order)
             throw new common_1.NotFoundException('ບໍ່ພົບ Order');
+        const netInflowMap = new Map();
+        for (const r of order.receipts) {
+            const key = `${r.method}:${r.bankAccountId ?? ''}:${r.currency}`;
+            const amt = (0, domain_1.dec)(r.amount.toFixed());
+            const signed = r.isRefund ? amt.neg() : amt;
+            const prev = netInflowMap.get(key);
+            if (!prev) {
+                netInflowMap.set(key, {
+                    method: r.method,
+                    bankAccountId: r.bankAccountId ?? null,
+                    currency: r.currency,
+                    net: signed,
+                });
+            }
+            else {
+                prev.net = prev.net.plus(signed);
+            }
+        }
+        const netInflows = Array.from(netInflowMap.values())
+            .filter((item) => item.net.gt(0))
+            .map((item) => ({
+            method: item.method,
+            bankAccountId: item.bankAccountId,
+            currency: item.currency,
+            amount: item.net,
+        }));
+        if (netInflows.length > 0) {
+            await this.cash.assertSufficientFunds(netInflows, `ການລຶບ Order ${order.code} (ຍອດຄົງເຫຼືອຈະຕິດລົບ)`);
+        }
         return this.prisma.$transaction(async (tx) => {
             const now = new Date();
             await tx.order.update({
@@ -733,8 +990,16 @@ let OrdersService = class OrdersService {
                 data: { deletedAt: now, deletedById: user.id },
             });
             await tx.advanceLedger.updateMany({
-                where: { orderId: id },
+                where: { orderId: id, deletedAt: null },
                 data: { deletedAt: now },
+            });
+            await tx.cashTransaction.updateMany({
+                where: { refType: 'Order', refId: id, deletedAt: null },
+                data: { deletedAt: now, deletedById: user.id },
+            });
+            await tx.bankTransaction.updateMany({
+                where: { refType: 'Order', refId: id, deletedAt: null },
+                data: { deletedAt: now, deletedById: user.id },
             });
             await this.audit.record({
                 actorId: user.id,
@@ -754,6 +1019,7 @@ exports.OrdersService = OrdersService = __decorate([
         audit_service_1.AuditService,
         business_day_service_1.BusinessDayService,
         advance_service_1.AdvanceService,
+        cash_service_1.CashService,
         pricing_context_service_1.PricingContextService,
         history_range_service_1.HistoryRangeService])
 ], OrdersService);

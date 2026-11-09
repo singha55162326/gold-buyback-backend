@@ -628,6 +628,20 @@ export class FinanceService {
     });
     if (!before) throw new NotFoundException('ບໍ່ພົບລາຍການຮັບຈ່າຍ');
 
+    if (before.kind === 'INCOME') {
+      await this.cash.assertSufficientFunds(
+        [
+          {
+            method: before.method,
+            bankAccountId: before.bankAccountId,
+            currency: before.currency,
+            amount: before.amount,
+          },
+        ],
+        'ການລຶບລາຍຮັບ (ຍອດຄົງເຫຼືອຈະຕິດລົບ)',
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
       const after = await tx.incomeExpenseTransaction.update({
@@ -861,6 +875,9 @@ export class FinanceService {
     ]);
     if (!partner) throw new NotFoundException('ບໍ່ພົບ Supplier');
     if (!category) throw new NotFoundException('ບໍ່ພົບປະເພດລາຍການ');
+    if (dto.method === 'BANK' && !dto.bankAccountId) {
+      throw new BadRequestException('ກະລຸນາເລືອກທະນາຄານ');
+    }
 
     const reason: CashApArReason = side === 'AP' ? 'MANUAL_AP' : 'MANUAL_AR';
 
@@ -873,6 +890,8 @@ export class FinanceService {
         categoryId: dto.categoryId,
         note: dto.note,
         createdById: user.id,
+        method: dto.method ?? null,
+        bankAccountId: dto.method === 'BANK' ? dto.bankAccountId : null,
       });
 
       await this.audit.record(
@@ -919,6 +938,20 @@ export class FinanceService {
     const day = await this.businessDay.current();
     const reason: CashApArReason = side === 'AP' ? 'MANUAL_AP_PAYMENT' : 'MANUAL_AR_RECEIPT';
     const moneyLeaves = side === 'AP';
+
+    if (moneyLeaves) {
+      await this.cash.assertSufficientFunds(
+        [
+          {
+            method: dto.method,
+            bankAccountId: dto.bankAccountId,
+            currency: dto.currency,
+            amount,
+          },
+        ],
+        `ການຊຳລະ ${side} (Cash)`,
+      );
+    }
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.method === 'CASH') {
@@ -969,6 +1002,8 @@ export class FinanceService {
         categoryId: latestEntry?.categoryId ?? undefined,
         note: dto.note ?? `ຊຳຣະ ${side} (Cash) ${partner.nameLo}`,
         createdById: user.id,
+        method: dto.method,
+        bankAccountId: dto.method === 'BANK' ? dto.bankAccountId : null,
       });
 
       await this.audit.record(
@@ -1102,7 +1137,7 @@ export class FinanceService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.cashApArLedger.findMany({
         where,
-        include: { partner: true, category: true },
+        include: { partner: true, category: true, bankAccount: true },
         orderBy: [{ businessDate: 'desc' }, { sequence: 'desc' }],
         skip: range.skip,
         take: range.take,

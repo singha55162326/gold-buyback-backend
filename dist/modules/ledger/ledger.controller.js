@@ -21,6 +21,7 @@ const current_user_decorator_1 = require("../../common/decorators/current-user.d
 const swagger_1 = require("@nestjs/swagger");
 const history_range_dto_1 = require("../../common/dto/history-range.dto");
 const gold_apar_dto_1 = require("./dto/gold-apar.dto");
+const coh_query_dto_1 = require("./dto/coh-query.dto");
 /**
  * Read-only accounting views (TOR §3.7, §8, §9). Every figure is derived from
  * the ledgers on request, so these endpoints have no write path at all.
@@ -33,8 +34,8 @@ let LedgerController = class LedgerController {
     wac() {
         return this.ledger.wac();
     }
-    coh(asOf) {
-        return this.ledger.coh(asOf);
+    coh(query) {
+        return this.ledger.coh(query.as_of ?? query.asOf);
     }
     wealthHistory() {
         return this.ledger.wealthHistory();
@@ -68,15 +69,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], LedgerController.prototype, "wac", null);
 __decorate([
-    openapi.ApiQuery({ name: "as_of", required: false }),
     (0, roles_decorator_1.Roles)('ADMIN', 'MANAGER', 'FINANCIAL_CONTROLLER')
     // COH ເປັນຍອດຢູ່ເວລາໜຶ່ງ: filter ເປັນວັນທີດຽວ (as_of) ບໍ່ແມ່ນຊ່ວງວັນທີ.
     ,
     (0, common_1.Get)('coh'),
     openapi.ApiResponse({ status: 200 }),
-    __param(0, (0, common_1.Query)('as_of')),
+    __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [coh_query_dto_1.CohQueryDto]),
     __metadata("design:returntype", void 0)
 ], LedgerController.prototype, "coh", null);
 __decorate([

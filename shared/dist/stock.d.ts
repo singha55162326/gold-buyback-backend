@@ -110,10 +110,7 @@ export interface StockOutCheck {
  */
 export declare function checkStockOut(availableG: Numeric, requestedG: Numeric): StockOutCheck;
 /**
- * ນ້ຳໜັກ(g) ທີ່ໄດ້ຮັບ = ROUNDUP(ລວມ GOLD(g) × %ຄຳ, 0)  — TOR §7.2 OUT ກໍລະນີ 1.
- *
- * ROUNDUP so the smith is held to the higher figure; any shortfall on return
- * shows up as an AR (GOLD) discrepancy rather than being absorbed silently.
+ * ນ້ຳໜັກ(g) ທີ່ໄດ້ຮັບ = ລວມ GOLD(g) × %ຄຳ (ທົດສະນິຍົມ 3 ຕົວ) — TOR §7.2 OUT ກໍລະນີ 1.
  */
 export declare function expectedReturnWeight(totalGoldG: Numeric, goldPercent: Numeric): Decimal;
 /** GOLD (g) = weight_g × ຈຳນວນ — used by every movement line form. */

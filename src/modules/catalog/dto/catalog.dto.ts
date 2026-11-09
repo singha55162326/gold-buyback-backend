@@ -1,5 +1,6 @@
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { PartnerType } from '@prisma/client';
 
 /**
  * `code` is no longer accepted on create — it is issued by
@@ -31,6 +32,7 @@ export class CreateCabinetDto extends LegacyCode {
 export class CreatePartnerDto extends LegacyCode {
   @IsString() @MinLength(1) @MaxLength(80) nameLo: string;
   @IsIn(['IN', 'OUT', 'BOTH']) direction: 'IN' | 'OUT' | 'BOTH';
+  @IsOptional() @IsIn(['FACTORY', 'SMITH', 'SUPPLIER', 'INTERNAL']) type?: PartnerType;
   @IsOptional() @IsBoolean() tracksGoldApAr?: boolean;
 }
 
@@ -58,6 +60,7 @@ export class UpdateCabinetDto {
 export class UpdatePartnerDto {
   @IsOptional() @IsString() @MinLength(1) @MaxLength(80) nameLo?: string;
   @IsOptional() @IsIn(['IN', 'OUT', 'BOTH']) direction?: 'IN' | 'OUT' | 'BOTH';
+  @IsOptional() @IsIn(['FACTORY', 'SMITH', 'SUPPLIER', 'INTERNAL']) type?: PartnerType;
   @IsOptional() @IsBoolean() tracksGoldApAr?: boolean;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }

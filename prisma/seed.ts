@@ -18,7 +18,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma, PartnerType } from '@prisma/client';
 
 // DATABASE_URL lives in the ROOT .env so the Prisma CLI and the API can never
 // drift onto different databases. `__dirname` is not defined in ESM, so it is
@@ -268,14 +268,14 @@ async function seedGoldTypesAndItems() {
  */
 async function seedPartnerSources() {
   const partners = [
-    { code: 'EASY', nameLo: 'EASY', direction: 'IN' as const, tracksGoldApAr: true, sortOrder: 1 },
-    { code: 'FACTORY', nameLo: 'FACTORY', direction: 'BOTH' as const, tracksGoldApAr: true, sortOrder: 2 },
-    { code: 'OUTSOURCE_SMITH', nameLo: 'ຊ່າງນອກ', direction: 'BOTH' as const, tracksGoldApAr: true, sortOrder: 3 },
-    { code: 'OTHER', nameLo: 'ອື່ນໆ', direction: 'BOTH' as const, tracksGoldApAr: true, sortOrder: 4 },
-    { code: 'CABINET', nameLo: 'ຕູ້ເຄື່ອງ', direction: 'OUT' as const, tracksGoldApAr: false, sortOrder: 5 },
-    { code: 'WHOLESALES', nameLo: 'WHOLESALES', direction: 'OUT' as const, tracksGoldApAr: false, sortOrder: 6 },
-    { code: 'WITHDRAW', nameLo: 'WITHDRAW', direction: 'OUT' as const, tracksGoldApAr: true, sortOrder: 7 },
-    { code: 'CASHIER', nameLo: 'Cashier', direction: 'IN' as const, tracksGoldApAr: false, sortOrder: 8 },
+    { code: 'EASY', nameLo: 'EASY', direction: 'IN' as const, type: 'SUPPLIER' as const, tracksGoldApAr: true, sortOrder: 1 },
+    { code: 'FACTORY', nameLo: 'FACTORY', direction: 'BOTH' as const, type: 'FACTORY' as const, tracksGoldApAr: true, sortOrder: 2 },
+    { code: 'OUTSOURCE_SMITH', nameLo: 'ຊ່າງນອກ', direction: 'BOTH' as const, type: 'SMITH' as const, tracksGoldApAr: true, sortOrder: 3 },
+    { code: 'OTHER', nameLo: 'ອື່ນໆ', direction: 'BOTH' as const, type: 'INTERNAL' as const, tracksGoldApAr: true, sortOrder: 4 },
+    { code: 'CABINET', nameLo: 'ຕູ້ເຄື່ອງ', direction: 'OUT' as const, type: 'INTERNAL' as const, tracksGoldApAr: false, sortOrder: 5 },
+    { code: 'WHOLESALES', nameLo: 'WHOLESALES', direction: 'OUT' as const, type: 'SUPPLIER' as const, tracksGoldApAr: false, sortOrder: 6 },
+    { code: 'WITHDRAW', nameLo: 'WITHDRAW', direction: 'OUT' as const, type: 'INTERNAL' as const, tracksGoldApAr: true, sortOrder: 7 },
+    { code: 'CASHIER', nameLo: 'Cashier', direction: 'IN' as const, type: 'INTERNAL' as const, tracksGoldApAr: false, sortOrder: 8 },
   ];
   for (const p of partners) {
     await prisma.partnerSource.upsert({ where: { code: p.code }, update: p, create: p });
@@ -337,11 +337,6 @@ async function seedCabinets() {
  * a code change.
  */
 async function seedGoldApArPostingRules() {
-  const existing = await prisma.goldApArPostingRule.count();
-  if (existing > 0) {
-    console.log('  AP/AR gold rules.... already seeded');
-    return;
-  }
   const partners = await prisma.partnerSource.findMany({ where: { tracksGoldApAr: true } });
   const byCode = new Map(partners.map((p) => [p.code, p.id]));
 
@@ -385,12 +380,26 @@ async function seedGoldApArPostingRules() {
   for (const r of rules) {
     const partnerId = byCode.get(r.code);
     if (!partnerId) continue;
-    await prisma.goldApArPostingRule.create({
-      data: {
+    const counterpartyId = r.counterparty ? (byCode.get(r.counterparty) ?? null) : null;
+    await prisma.goldApArPostingRule.upsert({
+      where: {
+        scope_type_partnerId: {
+          scope: r.scope,
+          type: r.type,
+          partnerId,
+        },
+      },
+      update: {
+        side: r.side,
+        sign: r.sign,
+        counterpartyId,
+        note: r.note,
+      },
+      create: {
         scope: r.scope,
         type: r.type,
         partnerId,
-        counterpartyId: r.counterparty ? (byCode.get(r.counterparty) ?? null) : null,
+        counterpartyId,
         side: r.side,
         sign: r.sign,
         note: r.note,

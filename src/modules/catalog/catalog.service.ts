@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { PartnerType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CodeGeneratorService } from '../../common/services/code-generator.service';
@@ -225,7 +226,7 @@ export class CatalogService {
   }
 
   async createPartner(
-    data: { nameLo: string; direction: 'IN' | 'OUT' | 'BOTH'; tracksGoldApAr?: boolean },
+    data: { nameLo: string; direction: 'IN' | 'OUT' | 'BOTH'; type?: PartnerType; tracksGoldApAr?: boolean },
     actorId: string,
   ) {
     await this.assertNameFree(this.prisma.partnerSource as never, data.nameLo, 'ແຫຼ່ງ');
@@ -236,6 +237,7 @@ export class CatalogService {
         code,
         nameLo: data.nameLo.trim(),
         direction: data.direction,
+        type: data.type ?? 'INTERNAL',
         tracksGoldApAr: data.tracksGoldApAr ?? false,
         sortOrder: (max._max.sortOrder ?? 0) + 1,
       },
@@ -405,6 +407,7 @@ export class CatalogService {
     data: {
       nameLo?: string;
       direction?: 'IN' | 'OUT' | 'BOTH';
+      type?: PartnerType;
       tracksGoldApAr?: boolean;
       isActive?: boolean;
     },
@@ -420,6 +423,7 @@ export class CatalogService {
       data: {
         ...(data.nameLo !== undefined ? { nameLo: data.nameLo.trim() } : {}),
         ...(data.direction !== undefined ? { direction: data.direction } : {}),
+        ...(data.type !== undefined ? { type: data.type } : {}),
         ...(data.tracksGoldApAr !== undefined ? { tracksGoldApAr: data.tracksGoldApAr } : {}),
         ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       },

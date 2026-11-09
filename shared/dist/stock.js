@@ -98,14 +98,11 @@ export function checkStockOut(availableG, requestedG) {
     };
 }
 /**
- * ນ້ຳໜັກ(g) ທີ່ໄດ້ຮັບ = ROUNDUP(ລວມ GOLD(g) × %ຄຳ, 0)  — TOR §7.2 OUT ກໍລະນີ 1.
- *
- * ROUNDUP so the smith is held to the higher figure; any shortfall on return
- * shows up as an AR (GOLD) discrepancy rather than being absorbed silently.
+ * ນ້ຳໜັກ(g) ທີ່ໄດ້ຮັບ = ລວມ GOLD(g) × %ຄຳ (ທົດສະນິຍົມ 3 ຕົວ) — TOR §7.2 OUT ກໍລະນີ 1.
  */
 export function expectedReturnWeight(totalGoldG, goldPercent) {
     const raw = dec(totalGoldG).mul(dec(goldPercent).div(100));
-    return raw.isZero() ? dec(0) : raw.ceil();
+    return raw.isZero() ? dec(0) : raw.toDecimalPlaces(3);
 }
 /** GOLD (g) = weight_g × ຈຳນວນ — used by every movement line form. */
 export function lineGoldWeight(weightG, quantity) {

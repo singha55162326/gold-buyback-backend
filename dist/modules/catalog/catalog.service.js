@@ -206,6 +206,7 @@ let CatalogService = class CatalogService {
                 code,
                 nameLo: data.nameLo.trim(),
                 direction: data.direction,
+                type: data.type ?? 'INTERNAL',
                 tracksGoldApAr: data.tracksGoldApAr ?? false,
                 sortOrder: (max._max.sortOrder ?? 0) + 1,
             },
@@ -365,6 +366,7 @@ let CatalogService = class CatalogService {
             data: {
                 ...(data.nameLo !== undefined ? { nameLo: data.nameLo.trim() } : {}),
                 ...(data.direction !== undefined ? { direction: data.direction } : {}),
+                ...(data.type !== undefined ? { type: data.type } : {}),
                 ...(data.tracksGoldApAr !== undefined ? { tracksGoldApAr: data.tracksGoldApAr } : {}),
                 ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
             },

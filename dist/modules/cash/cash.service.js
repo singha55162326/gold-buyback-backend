@@ -270,10 +270,62 @@ let CashService = class CashService {
     /* ---------------------------------------------------------------- *
      * §3.7 — Module Cash
      * ---------------------------------------------------------------- */
+    /**
+     * ກວດສອບວ່າຍອດເງິນສົດໃນຮ້ານ (Module Cash) ແລະ ຍອດເງິນໃນບັນຊີທະນາຄານ (Module Bank)
+     * ພຽງພໍສຳລັບການຈ່າຍອອກ ຫຼື ບໍ່ — ປ້ອງກັນບໍ່ໃຫ້ຍອດຕິດລົບ.
+     */
+    async assertSufficientFunds(legs, labelLo = 'ການຈ່າຍເງິນ') {
+        if (legs.length === 0)
+            return;
+        const cashRequested = new Map();
+        const bankRequested = new Map();
+        for (const leg of legs) {
+            const raw = typeof leg.amount === 'object' && leg.amount !== null && 'toFixed' in leg.amount
+                ? leg.amount.toFixed()
+                : leg.amount;
+            const amt = (0, domain_1.dec)(raw);
+            if (!amt.isFinite() || amt.lte(0))
+                continue;
+            if (leg.method === 'CASH') {
+                const prev = cashRequested.get(leg.currency) ?? (0, domain_1.dec)(0);
+                cashRequested.set(leg.currency, prev.plus(amt));
+            }
+            else if (leg.method === 'BANK' && leg.bankAccountId) {
+                const key = `${leg.bankAccountId}:${leg.currency}`;
+                const prev = bankRequested.get(key) ?? (0, domain_1.dec)(0);
+                bankRequested.set(key, prev.plus(amt));
+            }
+        }
+        if (cashRequested.size === 0 && bankRequested.size === 0)
+            return;
+        const [cashBalances, bankBalances] = await Promise.all([
+            cashRequested.size > 0 ? this.cashBalances() : Promise.resolve([]),
+            bankRequested.size > 0 ? this.bankBalances() : Promise.resolve([]),
+        ]);
+        for (const [currency, reqAmount] of cashRequested) {
+            const bal = cashBalances.find((b) => b.currency === currency);
+            const currentBal = (0, domain_1.dec)(bal?.balance ?? '0');
+            if (reqAmount.gt(currentBal)) {
+                throw new common_1.BadRequestException(`ເງິນສົດ ${currency} ໃນຮ້ານ (Module Cash) ບໍ່ພໍສຳລັບ${labelLo} (ມີ ${currentBal.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${reqAmount.toFixed()} ${currency})`);
+            }
+        }
+        for (const [key, reqAmount] of bankRequested) {
+            const [bankAccountId, currency] = key.split(':');
+            const bal = bankBalances.find((b) => b.bankAccountId === bankAccountId && b.currency === currency);
+            const currentBal = (0, domain_1.dec)(bal?.actual ?? '0');
+            const bankName = bal?.bankNameLo ?? 'ທະນາຄານ';
+            if (reqAmount.gt(currentBal)) {
+                throw new common_1.BadRequestException(`ຍອດເງິນ ${currency} ໃນບັນຊີ ${bankName} (Module Bank) ບໍ່ພໍສຳລັບ${labelLo} (ມີ ${currentBal.toFixed()} ${currency}, ຕ້ອງການຈ່າຍ ${reqAmount.toFixed()} ${currency})`);
+            }
+        }
+    }
     async createCashTransaction(dto, user) {
         const amount = (0, domain_1.dec)(dto.amount);
         if (!amount.isFinite() || amount.lte(0)) {
             throw new common_1.BadRequestException('ຈຳນວນເງິນຕ້ອງໃຫຍ່ກວ່າ 0');
+        }
+        if (CASH_SIGN[dto.type] === -1) {
+            await this.assertSufficientFunds([{ method: 'CASH', currency: dto.currency, amount }], 'ການຈ່າຍເງິນສົດອອກ');
         }
         const day = await this.businessDay.current();
         const created = await this.prisma.cashTransaction.create({
@@ -453,13 +505,8 @@ let CashService = class CashService {
         const bank = await this.prisma.bankAccount.findUnique({ where: { id: dto.bankAccountId } });
         if (!bank)
             throw new common_1.NotFoundException('ບໍ່ພົບບັນຊີທະນາຄານ');
-        if (dto.type === 'WITHDRAW') {
-            const balances = await this.bankBalances();
-            const bankBal = balances.find((b) => b.bankAccountId === dto.bankAccountId && b.currency === dto.currency);
-            const currentActual = (0, domain_1.dec)(bankBal?.actual ?? '0');
-            if (amount.gt(currentActual)) {
-                throw new common_1.BadRequestException(`ຍອດເງິນ ${dto.currency} ໃນບັນຊີ ${bank.nameLo} ບໍ່ພໍສຳລັບການຖອນ: ມີເຫຼືອ ${currentActual.toFixed()}, ຕ້ອງການຖອນ ${amount.toFixed()}`);
-            }
+        if (BANK_SIGN[dto.type] === -1) {
+            await this.assertSufficientFunds([{ method: 'BANK', bankAccountId: dto.bankAccountId, currency: dto.currency, amount }], 'ການຖອນ/ຈ່າຍຈາກທະນາຄານ');
         }
         const day = await this.businessDay.current();
         const created = await this.prisma.bankTransaction.create({

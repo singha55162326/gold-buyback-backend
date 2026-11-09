@@ -153,6 +153,8 @@ export class CreateApArCashEntryDto {
   @IsString() categoryId: string;
   @IsIn(['LAK', 'THB', 'USD']) currency: 'LAK' | 'THB' | 'USD';
   @IsDecimalString({ labelLo: 'ຈຳນວນເງິນ' }) amount: string;
+  @IsOptional() @IsIn(['CASH', 'BANK']) method?: 'CASH' | 'BANK';
+  @IsOptional() @IsString() bankAccountId?: string;
   @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
 }
 

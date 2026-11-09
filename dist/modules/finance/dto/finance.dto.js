@@ -413,9 +413,11 @@ class CreateApArCashEntryDto {
     categoryId;
     currency;
     amount;
+    method;
+    bankAccountId;
     note;
     static _OPENAPI_METADATA_FACTORY() {
-        return { partnerId: { required: true, type: () => String }, categoryId: { required: true, type: () => String }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
+        return { partnerId: { required: true, type: () => String }, categoryId: { required: true, type: () => String }, currency: { required: true, enum: ["LAK", "THB", "USD"], enum: ['LAK', 'THB', 'USD'] }, amount: { required: true, type: () => String }, method: { required: false, enum: ["CASH", "BANK"], enum: ['CASH', 'BANK'] }, bankAccountId: { required: false, type: () => String }, note: { required: false, type: () => String, maxLength: 500 } };
     }
 }
 exports.CreateApArCashEntryDto = CreateApArCashEntryDto;
@@ -435,6 +437,16 @@ __decorate([
     (0, decimal_string_validator_1.IsDecimalString)({ labelLo: 'ຈຳນວນເງິນ' }),
     __metadata("design:type", String)
 ], CreateApArCashEntryDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['CASH', 'BANK']),
+    __metadata("design:type", String)
+], CreateApArCashEntryDto.prototype, "method", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateApArCashEntryDto.prototype, "bankAccountId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

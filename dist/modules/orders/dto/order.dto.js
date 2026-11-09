@@ -245,6 +245,11 @@ class UpdateOrderStatusDto {
     /** Required for COMPLETED — ວັນທີລູກຄ້າມາຮັບເຄື່ອງ. */
     customerPickupAt;
     note;
+    /**
+     * Optional refund legs executed atomically inside the same transaction when
+     * advancing to COMPLETED.
+     */
+    refundReceipts;
     static _OPENAPI_METADATA_FACTORY() {
         return { status: { required: true, enum: ["COMPLETED", "CANCELLED", "SENT_TO_SMITH", "RECEIVED_FROM_SMITH", "AWAITING_PICKUP"], enum: [
                     'SENT_TO_SMITH',
@@ -252,7 +257,7 @@ class UpdateOrderStatusDto {
                     'AWAITING_PICKUP',
                     'COMPLETED',
                     'CANCELLED',
-                ] }, supplierId: { required: false, type: () => String, description: "Required for SENT_TO_SMITH \u2014 \u0EC0\u0EA5\u0EB7\u0EAD\u0E81 Supplier (TOR \u00A77)." }, receivedFromSmithAt: { required: false, type: () => String, description: "Required for RECEIVED_FROM_SMITH \u2014 \u0EA7\u0EB1\u0E99\u0E97\u0EB5\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }, customerPickupAt: { required: false, type: () => String, description: "Required for COMPLETED \u2014 \u0EA7\u0EB1\u0E99\u0E97\u0EB5\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0EA1\u0EB2\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }, note: { required: false, type: () => String, maxLength: 500 } };
+                ] }, supplierId: { required: false, type: () => String, description: "Required for SENT_TO_SMITH \u2014 \u0EC0\u0EA5\u0EB7\u0EAD\u0E81 Supplier (TOR \u00A77)." }, receivedFromSmithAt: { required: false, type: () => String, description: "Required for RECEIVED_FROM_SMITH \u2014 \u0EA7\u0EB1\u0E99\u0E97\u0EB5\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }, customerPickupAt: { required: false, type: () => String, description: "Required for COMPLETED \u2014 \u0EA7\u0EB1\u0E99\u0E97\u0EB5\u0EA5\u0EB9\u0E81\u0E84\u0EC9\u0EB2\u0EA1\u0EB2\u0EAE\u0EB1\u0E9A\u0EC0\u0E84\u0EB7\u0EC8\u0EAD\u0E87." }, note: { required: false, type: () => String, maxLength: 500 }, refundReceipts: { required: false, type: () => [require("./order.dto").OrderReceiptDto], description: "Optional refund legs executed atomically inside the same transaction when\nadvancing to COMPLETED." } };
     }
 }
 exports.UpdateOrderStatusDto = UpdateOrderStatusDto;
@@ -287,6 +292,13 @@ __decorate([
     (0, class_validator_1.MaxLength)(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }),
     __metadata("design:type", String)
 ], UpdateOrderStatusDto.prototype, "note", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => OrderReceiptDto),
+    __metadata("design:type", Array)
+], UpdateOrderStatusDto.prototype, "refundReceipts", void 0);
 class ReceiveOrderDto {
     /** Single-leg form, kept so an older client still works. */
     method;

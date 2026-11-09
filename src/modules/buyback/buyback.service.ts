@@ -13,6 +13,7 @@ import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import { ApprovalService } from '../../common/services/approval.service';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { StockLedgerService } from '../../common/services/stock-ledger.service';
+import { CashService } from '../cash/cash.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PricingContextService } from '../pricing/pricing-context.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -57,6 +58,7 @@ export class BuybackService {
     private readonly notifications: NotificationsService,
     private readonly pricingContext: PricingContextService,
     private readonly stockLedger: StockLedgerService,
+    private readonly cash: CashService,
     private readonly range: HistoryRangeService,
   ) {}
 
@@ -326,11 +328,16 @@ export class BuybackService {
   async review(id: string, dto: ReviewBuybackDto, user: AuthenticatedUser) {
     const buyback = await this.prisma.buyback.findFirst({
       where: { id, deletedAt: null },
+      include: { payments: true },
     });
     if (!buyback) throw new NotFoundException('ບໍ່ພົບລາຍການ Buyback');
 
     const next: ApprovalStatus = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
     this.approval.assertTransition(buyback.status, next);
+
+    if (dto.decision === 'APPROVED') {
+      await this.cash.assertSufficientFunds(buyback.payments, `ການຈ່າຍ Buyback ${buyback.code}`);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.buyback.update({
@@ -397,6 +404,8 @@ export class BuybackService {
     }
 
     this.approval.assertTransition(buyback.status, 'COMPLETED');
+
+    await this.cash.assertSufficientFunds(buyback.payments, `ການຈ່າຍ Buyback ${buyback.code}`);
 
     const day = await this.businessDay.current();
 

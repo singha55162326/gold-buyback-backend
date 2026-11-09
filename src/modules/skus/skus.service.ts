@@ -4,6 +4,7 @@ import { dec, GRAMS_PER_BAHT, trimTrailingZeros, type Decimal } from '@kpv/domai
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CodeGeneratorService } from '../../common/services/code-generator.service';
+import { BusinessDayService } from '../../common/services/business-day.service';
 import type { CreateSkuDto, UpdateSkuDto } from './dto/sku.dto';
 
 /**
@@ -141,6 +142,29 @@ export class SkusService {
           },
           include: { goldItem: true },
         });
+
+    const today = BusinessDayService.toDateOnly();
+    const currentDay = await this.prisma.businessDay.findUnique({ where: { date: today } });
+    if (currentDay) {
+      await this.prisma.stockNewSkuBalance.upsert({
+        where: {
+          businessDayId_goldSkuId: {
+            businessDayId: currentDay.id,
+            goldSkuId: created.id,
+          },
+        },
+        update: {},
+        create: {
+          businessDayId: currentDay.id,
+          goldSkuId: created.id,
+          openingQty: 0,
+          inQty: 0,
+          outQty: 0,
+          balanceQty: 0,
+          totalWeightG: new Prisma.Decimal(0),
+        },
+      });
+    }
 
     await this.audit.record({
       actorId,

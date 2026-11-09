@@ -141,6 +141,16 @@ export class UpdateOrderStatusDto {
   @IsOptional() @IsDateString() customerPickupAt?: string;
 
   @IsOptional() @IsString() @MaxLength(500, { message: 'ໝາຍເຫດຍາວເກີນ 500 ຕົວ' }) note?: string;
+
+  /**
+   * Optional refund legs executed atomically inside the same transaction when
+   * advancing to COMPLETED.
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderReceiptDto)
+  refundReceipts?: OrderReceiptDto[];
 }
 
 export class ReceiveOrderDto {

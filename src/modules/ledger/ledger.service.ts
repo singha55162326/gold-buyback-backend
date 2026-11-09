@@ -331,17 +331,20 @@ export class LedgerService {
    * ແຕ່ຍອດເງິນສົດ/ທະນາຄານ ຍັງເປັນຍອດຍົກມາ ບໍ່ແມ່ນ 0.
    */
   async coh(asOfDate?: string) {
-    const day = asOfDate
-      ? await this.prisma.businessDay.findUnique({ where: { date: new Date(`${asOfDate}T00:00:00.000Z`) } })
+    const cleanDate = typeof asOfDate === 'string' && asOfDate.trim() !== '' ? asOfDate.trim() : undefined;
+    const day = cleanDate
+      ? await this.prisma.businessDay.findUnique({ where: { date: new Date(`${cleanDate}T00:00:00.000Z`) } })
       : await this.businessDay.current();
-    const asOf = asOfDate ? new Date(`${asOfDate}T00:00:00.000Z`) : undefined;
+    const asOf = cleanDate
+      ? new Date(`${cleanDate}T00:00:00.000Z`)
+      : (day?.date ?? BusinessDayService.toDateOnly());
 
     const [cashBalances, bankBalances, apAr, goldSummary, wacPosition, advanceNet] =
       await Promise.all([
         this.cash.cashBalances(asOf),
         this.cash.bankBalances(asOf),
         // ມື້ທີ່ບໍ່ເຄີຍເປີດ: ສົ່ງ id ທີ່ບໍ່ກົງກັບແຖວໃດ ແລ້ວໄດ້ຍອດ 0 ຜ່ານເສັ້ນທາງດຽວກັນ.
-        this.cashApAr(day ?? { id: '—', date: asOf! }),
+        this.cashApAr(day ?? { id: '—', date: asOf }),
         this.goldApArSummary(asOf),
         this.stockLedger.currentWac(this.prisma, asOf),
         this.advance.netByCurrency(this.prisma, asOf),
@@ -349,9 +352,42 @@ export class LedgerService {
 
     const cashByCurrency = new Map(cashBalances.map((b) => [b.currency, dec(b.balance)]));
 
+    const bankAccounts = Array.from(
+      new Map(
+        bankBalances.map((b) => [
+          b.bankAccountId,
+          { id: b.bankAccountId, code: b.bankCode, nameLo: b.bankNameLo },
+        ]),
+      ).values(),
+    );
+
     const bankByCurrency = (code: string, currency: Currency): Decimal => {
       const row = bankBalances.find((b) => b.bankCode === code && b.currency === currency);
       return dec(row?.actual ?? 0);
+    };
+
+    const otherBanksByCurrency = (currency: Currency): Decimal => {
+      return bankBalances
+        .filter((b) => b.bankCode !== 'BCEL' && b.bankCode !== 'LDB' && b.currency === currency)
+        .reduce((sum, b) => sum.plus(dec(b.actual ?? 0)), dec(0));
+    };
+
+    const bankTotalForCurrency = (currency: Currency): Decimal => {
+      return bankBalances
+        .filter((b) => b.currency === currency)
+        .reduce((sum, b) => sum.plus(dec(b.actual ?? 0)), dec(0));
+    };
+
+    const banksForCurrency = (currency: Currency) => {
+      return bankAccounts.map((acc) => {
+        const row = bankBalances.find((b) => b.bankAccountId === acc.id && b.currency === currency);
+        return {
+          bankAccountId: acc.id,
+          bankCode: acc.code,
+          bankNameLo: acc.nameLo,
+          amount: dec(row?.actual ?? 0).toFixed(),
+        };
+      });
     };
 
     const apArFor = (side: 'AP' | 'AR', currency: Currency): Decimal => {
@@ -362,7 +398,9 @@ export class LedgerService {
     const cash = CURRENCIES.map((currency) => {
       const bcel = bankByCurrency('BCEL', currency);
       const ldb = bankByCurrency('LDB', currency);
-      const other = bankByCurrency('OTHER_BANK', currency);
+      const other = otherBanksByCurrency(currency);
+      const bankTotal = bankTotalForCurrency(currency);
+      const banks = banksForCurrency(currency);
       const ap = apArFor('AP', currency);
       const ar = apArFor('AR', currency);
       const advance = advanceNet[currency] ?? dec(0);
@@ -374,6 +412,8 @@ export class LedgerService {
         bcel: bcel.toFixed(),
         ldb: ldb.toFixed(),
         otherBank: other.toFixed(),
+        bankTotal: bankTotal.toFixed(),
+        banks,
         ap: ap.toFixed(),
         ar: ar.toFixed(),
         advance: advance.toFixed(),
@@ -409,6 +449,7 @@ export class LedgerService {
         cohG: gold.weightG.toFixed(),
         cohBaht: gold.baht.toFixed(),
       },
+      bankAccounts,
     };
   }
 

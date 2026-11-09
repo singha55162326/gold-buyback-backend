@@ -19,6 +19,7 @@ const history_range_service_1 = require("../../common/services/history-range.ser
 const approval_service_1 = require("../../common/services/approval.service");
 const business_day_service_1 = require("../../common/services/business-day.service");
 const stock_ledger_service_1 = require("../../common/services/stock-ledger.service");
+const cash_service_1 = require("../cash/cash.service");
 const notifications_service_1 = require("../notifications/notifications.service");
 const pricing_context_service_1 = require("../pricing/pricing-context.service");
 const D = (value) => new client_1.Prisma.Decimal(value.toFixed());
@@ -42,15 +43,17 @@ let ExchangeService = class ExchangeService {
     approval;
     businessDay;
     stockLedger;
+    cash;
     notifications;
     pricingContext;
     range;
-    constructor(prisma, audit, approval, businessDay, stockLedger, notifications, pricingContext, range) {
+    constructor(prisma, audit, approval, businessDay, stockLedger, cash, notifications, pricingContext, range) {
         this.prisma = prisma;
         this.audit = audit;
         this.approval = approval;
         this.businessDay = businessDay;
         this.stockLedger = stockLedger;
+        this.cash = cash;
         this.notifications = notifications;
         this.pricingContext = pricingContext;
         this.range = range;
@@ -288,6 +291,9 @@ let ExchangeService = class ExchangeService {
             throw new common_1.NotFoundException('ບໍ່ພົບລາຍການ');
         const next = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
         this.approval.assertTransition(exchange.status, next);
+        if (dto.decision === 'APPROVED') {
+            await this.cash.assertSufficientFunds(exchange.payments, `ການຈ່າຍປ່ຽນເປັນເງິນ ${exchange.code}`);
+        }
         const day = await this.businessDay.current();
         return this.prisma.$transaction(async (tx) => {
             if (dto.decision === 'APPROVED') {
@@ -463,6 +469,7 @@ exports.ExchangeService = ExchangeService = __decorate([
         approval_service_1.ApprovalService,
         business_day_service_1.BusinessDayService,
         stock_ledger_service_1.StockLedgerService,
+        cash_service_1.CashService,
         notifications_service_1.NotificationsService,
         pricing_context_service_1.PricingContextService,
         history_range_service_1.HistoryRangeService])

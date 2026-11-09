@@ -15,6 +15,7 @@ import type { HistoryRangeDto } from '../../common/dto/history-range.dto';
 import { ApprovalService } from '../../common/services/approval.service';
 import { BusinessDayService } from '../../common/services/business-day.service';
 import { StockLedgerService } from '../../common/services/stock-ledger.service';
+import { CashService } from '../cash/cash.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PricingContextService, type PricingContext } from '../pricing/pricing-context.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -50,6 +51,7 @@ export class ExchangeService {
     private readonly approval: ApprovalService,
     private readonly businessDay: BusinessDayService,
     private readonly stockLedger: StockLedgerService,
+    private readonly cash: CashService,
     private readonly notifications: NotificationsService,
     private readonly pricingContext: PricingContextService,
     private readonly range: HistoryRangeService,
@@ -308,6 +310,13 @@ export class ExchangeService {
 
     const next: ApprovalStatus = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
     this.approval.assertTransition(exchange.status, next);
+
+    if (dto.decision === 'APPROVED') {
+      await this.cash.assertSufficientFunds(
+        exchange.payments,
+        `ການຈ່າຍປ່ຽນເປັນເງິນ ${exchange.code}`,
+      );
+    }
 
     const day = await this.businessDay.current();
 

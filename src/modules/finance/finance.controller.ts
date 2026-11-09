@@ -164,11 +164,13 @@ export class FinanceController {
 
   /* ---- §7 Module Advace ---- */
 
+  @Roles('FINANCIAL_CONTROLLER', 'PAYMENT', 'ADMIN', 'MANAGER')
   @Get('advance')
   advanceSummary() {
     return this.advance.summary();
   }
 
+  @Roles('FINANCIAL_CONTROLLER', 'PAYMENT', 'ADMIN', 'MANAGER')
   @Get('advance/history')
   advanceHistory(@Query() query: HistoryRangeDto, @CurrentUser() user: AuthenticatedUser) {
     return this.advance.history(query, user);
